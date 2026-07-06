@@ -2,7 +2,7 @@
 
 ## 目的
 
-本文档为开发人员提供项目协作、代码组织、环境配置、测试和交付的基础规则。当前仓库尚未包含源码，因此命令部分以待补充项和推荐约定为主。
+本文档为开发人员提供项目协作、代码组织、环境配置、测试和交付的基础规则。当前仓库处于项目基线设计阶段，后续源码应按本文档确定的 Vue 3 + Spring Boot 3 技术栈落地。
 
 ## 开发前准备
 
@@ -10,25 +10,30 @@
 
 1. `README.md`
 2. `docs/PROJECT_OVERVIEW.md`
-3. `docs/REQUIREMENTS.md`
-4. `docs/ARCHITECTURE.md`
-5. `docs/SECURITY_PRIVACY.md`
-6. `CONTRIBUTING.md`
+3. `docs/TECH_STACK_AND_CORE_FEATURES.md`
+4. `docs/REQUIREMENTS.md`
+5. `docs/ARCHITECTURE.md`
+6. `docs/SECURITY_PRIVACY.md`
+7. `CONTRIBUTING.md`
 
 在开始开发前，应明确本次任务对应的需求、影响范围、验收方式和安全隐私影响。
 
-## 推荐环境
+## 开发环境
 
-后续确定技术栈后，请在此补充准确版本。
+第一版推荐版本如下：
 
 ```text
-Node.js: 待确定
-Python: 待确定
-Java: 待确定
-数据库: 待确定
-包管理器: 待确定
-测试框架: 待确定
-部署方式: 待确定
+Node.js: 20 LTS
+pnpm: 9.x
+Java: 17
+Maven: 3.9.x
+MySQL: 8.0+
+Redis: 7.x
+MinIO: RELEASE.2024 或兼容版本
+Docker: 24+
+Docker Compose: v2
+前端测试: Vitest、Vue Test Utils、Playwright
+后端测试: JUnit 5、Spring Boot Test、Testcontainers
 ```
 
 原则：
@@ -37,7 +42,7 @@ Java: 待确定
 - 本地、测试、生产环境应尽量保持一致。
 - 密钥、密码和令牌不得提交到仓库。
 
-## 推荐目录约定
+## 目录约定
 
 ```text
 frontend/        前端应用
@@ -49,33 +54,40 @@ tests/           跨模块或端到端测试
 .github/         GitHub 工作流、模板和协作配置
 ```
 
-如果实际代码采用不同结构，应更新本节。
+源码接入时应按此结构创建工程。如果实际代码采用不同结构，应更新本节。
 
 ## 本地启动
 
-源码接入后应补充真实命令。建议至少包含：
+源码接入后建议使用以下命令约定：
 
 ```bash
 # 安装依赖
-# 待补充
+cd frontend
+pnpm install
 
 # 启动前端
-# 待补充
+pnpm dev
 
 # 启动后端
-# 待补充
+cd ../backend
+mvn spring-boot:run
 
-# 执行数据库迁移
-# 待补充
+# 启动本地基础设施
+cd ..
+docker compose up -d mysql redis minio
 
-# 运行测试
-# 待补充
+# 运行前端测试
+cd frontend
+pnpm test
+
+# 运行后端测试
+cd ../backend
+mvn test
 ```
 
-命令补齐时，应说明：
+工程创建后，应补充：
 
 - 运行目录。
-- 依赖版本。
 - 必要环境变量。
 - 默认端口。
 - 常见失败原因和解决方式。
@@ -84,15 +96,20 @@ tests/           跨模块或端到端测试
 
 不得提交真实密钥。建议后续提供 `.env.example`，只包含示例值。
 
-建议分类：
+建议变量：
 
 ```text
 APP_ENV=
 APP_PORT=
+FRONTEND_BASE_URL=
 DATABASE_URL=
 JWT_SECRET=
 LOG_LEVEL=
+REDIS_HOST=
+REDIS_PORT=
 STORAGE_ENDPOINT=
+STORAGE_ACCESS_KEY=
+STORAGE_SECRET_KEY=
 THIRD_PARTY_API_KEY=
 ```
 
