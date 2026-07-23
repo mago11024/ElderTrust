@@ -67,13 +67,18 @@
 
 实际工程创建后必须通过锁文件和工具配置固定版本。
 
+M1 只要求 MySQL 可运行。Redis 和 MinIO 仍是第一版技术基线，但应在短期状态、限流、录音或素材功能首次需要时接入；在此之前通过明确接口和测试替身避免业务代码绑定具体基础设施。
+
 ## 5. 计划命令契约
 
 工程骨架完成后，应提供以下入口或等价脚本：
 
 ```powershell
-# 基础设施
-docker compose up -d mysql redis minio
+# M1 基础设施
+docker compose up -d mysql
+
+# 进入语音和短期状态里程碑后
+docker compose up -d redis minio
 
 # 后端
 cd backend
