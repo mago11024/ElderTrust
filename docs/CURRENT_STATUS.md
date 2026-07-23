@@ -13,7 +13,10 @@ blockers: []
 active_regression: null
 suspended_task: null
 gate_reverification_required: false
-last_verification: null
+last_verification:
+  command: scripts/show_current_task.ps1 + scripts/validate_task_catalog.ps1
+  result: passed
+  verified_at: 2026-07-24
 updated_at: 2026-07-24
 ```
 
