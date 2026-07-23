@@ -6,7 +6,7 @@
 
 - 先理解需求，再写代码。
 - 小步提交，保持变更聚焦。
-- 涉及用户数据、权限、家庭协同、社区管理的变更必须谨慎说明。
+- 涉及用户数据、权限、家庭协同、AI 对话、语音和评分的变更必须谨慎说明。
 - 功能、测试、文档应同步更新。
 - 不提交真实密钥、真实个人数据或未经脱敏的测试数据。
 
@@ -24,6 +24,7 @@
 
 ```text
 feature/<topic>
+codex/<topic>
 fix/<topic>
 docs/<topic>
 test/<topic>
@@ -35,6 +36,7 @@ security/<topic>
 
 ```text
 feature/scenario-training
+codex/project-documentation
 fix/family-permission-check
 docs/update-development-guide
 ```
@@ -60,9 +62,9 @@ docs/update-development-guide
 示例：
 
 ```text
-feat: add training scenario progress summary
-security: enforce family authorization on progress API
-docs: add initial security and privacy guide
+feat: add controlled training state machine
+security: reject unauthorized training websocket
+docs: align project documentation with FastAPI design
 ```
 
 ## Pull Request 要求
@@ -100,10 +102,11 @@ PR 描述应说明：
 以下变更必须在 PR 中特别说明：
 
 - 新增或修改登录、鉴权、授权逻辑。
-- 新增用户数据字段。
-- 修改家庭成员或社区工作者可见的数据范围。
+- 新增用户、训练、语音或行为事件字段。
+- 修改家庭成员可见的数据范围。
 - 新增数据导出、删除、匿名化能力。
-- 接入第三方服务。
+- 接入或更换 ASR、LLM、TTS 和对象存储服务。
+- 修改 AI 场景约束、评分规则或降级路径。
 - 修改日志、监控或错误上报内容。
 - 修改生产配置、密钥或部署流程。
 
@@ -112,6 +115,8 @@ PR 描述应说明：
 - 是否只采集必要数据。
 - 是否做了后端权限校验。
 - 是否避免在日志中输出敏感信息。
+- 是否保证最终评分仍由确定性规则计算。
+- 是否为外部 AI 失败提供测试和降级。
 - 是否更新了 `docs/SECURITY_PRIVACY.md`。
 
 ## 代码评审关注点
@@ -120,6 +125,8 @@ PR 描述应说明：
 
 - 是否满足需求和验收标准。
 - 是否存在越权访问风险。
+- AI 是否可能跳出场景或安全边界。
+- WebSocket 断线、重连和乱序是否被正确处理。
 - 是否泄露个人信息或敏感配置。
 - 是否破坏已有功能。
 - 是否有必要测试。
