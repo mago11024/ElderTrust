@@ -5,12 +5,11 @@ schema_version: 1
 current_milestone: M0
 milestone_status: active
 current_task: T00-01
-status: blocked
+status: in_progress
 last_completed_task: null
 next_task: T00-02
 task_catalog: docs/superpowers/plans/2026-07-23-complete-project-task-catalog.md
-blockers:
-  - Docker Desktop daemon is not running; com.docker.service requires an interactive or administrator start before MySQL container verification.
+blockers: []
 active_regression: null
 suspended_task: null
 gate_reverification_required: false
