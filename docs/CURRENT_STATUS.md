@@ -5,7 +5,7 @@ schema_version: 1
 current_milestone: M0
 milestone_status: active
 current_task: T00-01
-status: ready
+status: in_progress
 last_completed_task: null
 next_task: T00-02
 task_catalog: docs/superpowers/plans/2026-07-23-complete-project-task-catalog.md
