@@ -158,6 +158,26 @@
 
 源码工程尚未建立，因此当前没有可运行的安装或启动命令。工程骨架完成后，实际命令、端口和环境变量将以[开发指南](docs/DEVELOPMENT.md)和仓库脚本为准，不在文档中伪装未实现能力。
 
+## 继续开发
+
+新会话不需要复制完整 Task。按以下顺序恢复：
+
+```text
+AGENTS.md
+→ docs/CURRENT_STATUS.md
+→ scripts/show_current_task.ps1
+→ 当前 Task 关联的专题章节
+```
+
+常用命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\show_current_task.ps1
+powershell -ExecutionPolicy Bypass -File scripts\validate_task_catalog.ps1
+```
+
+当前执行位置以[当前开发状态](docs/CURRENT_STATUS.md)为准，Task 范围、依赖、文件和验收以[完整 Task 目录](docs/superpowers/plans/2026-07-23-complete-project-task-catalog.md)为准。直接说“继续执行当前 Task”即可恢复上下文；调整 Task 或修复回归时遵循[开发指南](docs/DEVELOPMENT.md)中的治理流程。
+
 ## 许可证
 
 当前仓库未提供开源许可证。正式对外开源、部署或引入第三方素材前，应补充 `LICENSE` 并核对 AI、语音和内容素材的授权条件。

@@ -253,3 +253,90 @@ Pull Request 必须说明范围、影响、验证结果、安全隐私影响和�
 - 录音保留和删除策略；
 - AI 供应商和数据传输；
 - 部署及降级方案。
+
+## 15. Task 调整与版本控制
+
+Task 范围、依赖、文件和验收以[完整 Task 目录](superpowers/plans/2026-07-23-complete-project-task-catalog.md)为准；当前执行位置以[当前开发状态](CURRENT_STATUS.md)为准。二者不能互相替代。
+
+### 15.1 状态规则
+
+| Task 状态 | 调整规则 |
+| --- | --- |
+| 未开始 | 可以拆分、合并、调整依赖和验收 |
+| 进行中 | 只允许不改变主要目标的澄清 |
+| 已完成 | 不改写历史范围，新建补充或修复 Task |
+| 已替代 | 保留原记录并指向替代 Task |
+
+Task 开始执行后 ID 不再改变。新增 Task 使用当前里程碑下一个未使用编号，实际执行顺序由显式依赖和 `CURRENT_STATUS.md` 决定；不得为了保持数字连续而重编号进行中或已完成 Task。
+
+### 15.2 变更步骤
+
+```text
+提出调整
+→ 不修改文件，先做影响分析
+→ 用户确认
+→ 修改 Task 目录和下游依赖
+→ 更新需求追踪
+→ 记录 TASK_CHANGELOG
+→ 运行 validate_task_catalog.ps1
+→ 独立提交规划变更
+→ 恢复功能开发
+```
+
+规划调整必须记录到[Task 变更日志](TASK_CHANGELOG.md)，并运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate_task_catalog.ps1
+```
+
+规划调整与功能实现不得放在同一个提交。调整未开始 Task 时需要复核其上游依赖、下游依赖、里程碑 Gate、需求追踪和验收是否仍然闭合。
+
+## 16. Bug、回归和 Gate 重验
+
+### 16.1 归属判断
+
+| 情况 | 处理 |
+| --- | --- |
+| 当前 Task 引入回归 | 在当前 Task 内修复，当前 Task 不得完成 |
+| 已完成 Task 的潜藏缺陷 | 创建独立 Bugfix Task |
+| 新需求改变原行为 | 走 Task 调整流程，不标记为 Bug |
+| 不阻塞的轻微问题 | 建立后续 Task，不降低当前 Gate |
+| 权限、安全、隐私、评分或数据问题 | 立即阻塞后续开发并优先修复 |
+
+### 16.2 修复步骤
+
+```text
+暂停当前 Task
+→ 稳定复现
+→ 判断引入来源和严重程度
+→ 写能够失败的回归测试
+→ 当前 Task 内修复或新增 Bugfix Task
+→ 修复根因
+→ 运行 Bugfix 测试
+→ 运行原 Task 测试
+→ 运行当前 Task 测试
+→ 重新运行受影响 Gate
+→ 更新 CURRENT_STATUS 和 TASK_CHANGELOG
+→ 恢复被暂停 Task
+```
+
+发生回归时，`CURRENT_STATUS.md` 必须记录 `active_regression`、`suspended_task` 和是否需要 Gate 重验。修复证据和恢复决定写入[Task 变更日志](TASK_CHANGELOG.md)。
+
+禁止：
+
+- 改写已完成 Task 的历史范围；
+- 删除失败测试或降低验收标准；
+- 把无关 Bug 偷塞入当前 Task；
+- 通过 `git reset --hard` 或重写共享历史掩盖回归；
+- 只运行修复测试而不运行原 Task、当前 Task 和受影响 Gate。
+
+### 16.3 Gate 失效与重验
+
+已通过 Gate 后发现阻塞性回归时：
+
+- 保留原完成历史；
+- 把当前里程碑健康状态标记为 `regression_detected`；
+- 设置 `gate_reverification_required: true`；
+- 修复完成后重新运行原 Gate；
+- 记录新的验证时间、命令和结果；
+- 验证通过后恢复里程碑完成状态，再恢复被暂停 Task。
