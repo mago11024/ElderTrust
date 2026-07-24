@@ -33,10 +33,10 @@
 
 ### 开发环境
 
-- [ ] 确认团队统一使用的 Node.js、pnpm、Python 和 Docker 版本。
+- [x] 确认团队统一使用的 Node.js、pnpm、Python、Docker 和 Docker Compose 版本。
 - [ ] 在至少一台实际开发设备上验证 MySQL 容器可运行。
-- [ ] 确认 Windows/macOS/Linux 的主要开发环境及脚本兼容要求。
-- [ ] 约定配置分层：`.env.example`、本地 `.env`、测试配置和部署密钥。
+- [x] 确认 Windows 11 和 PowerShell 为当前主要开发与容器验收环境，并记录跨平台脚本兼容要求。
+- [x] 约定配置分层：`.env.example`、本地 `.env`、测试配置和部署密钥。
 
 ### M1 契约
 
