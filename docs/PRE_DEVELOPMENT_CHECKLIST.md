@@ -33,10 +33,12 @@
 
 ### 开发环境
 
-- [ ] 确认团队统一使用的 Node.js、pnpm、Python 和 Docker 版本。
-- [ ] 在至少一台实际开发设备上验证 MySQL 容器可运行。
-- [ ] 确认 Windows/macOS/Linux 的主要开发环境及脚本兼容要求。
-- [ ] 约定配置分层：`.env.example`、本地 `.env`、测试配置和部署密钥。
+- [x] 确认团队统一使用的 Node.js、pnpm、Python、Docker 和 Docker Compose 版本。
+- [x] 在至少一台实际开发设备上验证 MySQL 容器可运行。
+- [x] 确认 Windows 11 和 PowerShell 为当前主要开发与容器验收环境，并记录跨平台脚本兼容要求。
+- [x] 约定配置分层：`.env.example`、本地 `.env`、测试配置和部署密钥。
+
+验证记录（2026-07-24，Windows 11）：本机 `MySQL57` 占用默认端口 3306，因此通过进程级 `MYSQL_PORT=3307` 覆盖运行 `docker compose up -d mysql`；容器健康状态达到 `healthy`，容器内 `mysqladmin ping` 返回 `mysqld is alive`。验收后运行 `docker compose down`，命名卷 `anxin-training_mysql_data` 已确认保留。
 
 ### M1 契约
 

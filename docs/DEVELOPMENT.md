@@ -52,20 +52,22 @@
 
 模块应保持单一职责。跨模块调用使用应用服务和明确类型，不能跨目录直接操作内部 ORM 模型。
 
-## 4. 计划开发环境
+## 4. 开发环境
 
 | 工具 | 版本基线 |
 | --- | --- |
-| Node.js | 20 LTS 或项目锁定版本 |
-| pnpm | 9.x 或项目锁定版本 |
-| Python | 3.12 |
-| MySQL | 8.0+ |
+| Node.js | 24.18.0 |
+| pnpm | 11.4.0 |
+| Python | 3.12.10 |
+| MySQL | 8.4.10 |
 | Redis | 7.x |
 | MinIO | 与 S3 API 兼容的稳定版本 |
-| Docker | 24+ |
-| Docker Compose | v2 |
+| Docker | 29.6.2 |
+| Docker Compose | 5.1.4 |
 
-实际工程创建后必须通过锁文件和工具配置固定版本。
+`.tool-versions` 是 Node.js、pnpm、Python、Docker 和 Docker Compose 精确版本的权威来源；`docker-compose.yml` 锁定 MySQL 镜像版本。版本变化必须同时更新锁定文件、本节和相关验收。
+
+Windows 11 是当前主要开发与容器验收环境。仓库脚本优先提供 PowerShell 入口；跨平台脚本不得依赖 PowerShell 独有行为，若暂时只能在 Windows 运行必须在命令旁明确标注。
 
 M1 只要求 MySQL 可运行。Redis 和 MinIO 仍是第一版技术基线，但应在短期状态、限流、录音或素材功能首次需要时接入；在此之前通过明确接口和测试替身避免业务代码绑定具体基础设施。
 
@@ -105,38 +107,31 @@ pnpm exec playwright test
 
 ## 6. 环境变量
 
-第一版至少需要以下配置，仓库只提交 `.env.example`：
+T00-01 只定义当前本地应用和 MySQL 所需配置，仓库提交的 `.env.example` 内容如下：
 
 ```text
-APP_ENV=
-APP_HOST=
-APP_PORT=
-FRONTEND_ORIGIN=
+APP_ENV=development
+APP_HOST=127.0.0.1
+APP_PORT=8000
+FRONTEND_ORIGIN=http://localhost:5173
+LOG_LEVEL=INFO
 
-DATABASE_URL=
-REDIS_URL=
-
-JWT_SECRET=
-JWT_EXPIRE_MINUTES=
-
-STORAGE_ENDPOINT=
-STORAGE_BUCKET=
-STORAGE_ACCESS_KEY=
-STORAGE_SECRET_KEY=
-RECORDING_RETENTION_POLICY=
-
-ASR_PROVIDER=
-ASR_API_KEY=
-LLM_PROVIDER=
-LLM_API_KEY=
-TTS_PROVIDER=
-TTS_API_KEY=
-
-AI_REQUEST_TIMEOUT_SECONDS=
-TRAINING_MAX_DURATION_SECONDS=
-TRAINING_MAX_TURNS=
-LOG_LEVEL=
+MYSQL_DATABASE=anxin_training
+MYSQL_USER=anxin_app
+MYSQL_PASSWORD=local-only-change-me
+MYSQL_ROOT_PASSWORD=local-root-only-change-me
+MYSQL_PORT=3306
+DATABASE_URL=mysql+asyncmy://anxin_app:local-only-change-me@localhost:3306/anxin_training
 ```
+
+配置按以下四层管理：
+
+1. `.env.example`：提交到仓库，只包含安全的本地默认值和明显占位值。
+2. 本地 `.env`：开发者私有，不提交，用于覆盖端口和本地开发凭据。
+3. 测试配置：由测试进程或 CI 注入，使用隔离数据库和独立凭据。
+4. 部署密钥：由部署平台密钥存储注入，不进入仓库、镜像或前端构建产物。
+
+Redis、MinIO、存储和 AI 供应商变量在相应 Task 首次需要时加入，不在 T00-01 提前建立契约。
 
 真实密钥不得提交、打印或返回给前端。新增变量时必须更新 `.env.example` 和部署文档。
 

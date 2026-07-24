@@ -5,8 +5,8 @@ schema_version: 1
 current_milestone: M0
 milestone_status: active
 current_task: T00-01
-status: ready
-last_completed_task: null
+status: completed
+last_completed_task: T00-01
 next_task: T00-02
 task_catalog: docs/superpowers/plans/2026-07-23-complete-project-task-catalog.md
 blockers: []
@@ -14,7 +14,7 @@ active_regression: null
 suspended_task: null
 gate_reverification_required: false
 last_verification:
-  command: scripts/show_current_task.ps1 + scripts/validate_task_catalog.ps1
+  command: docker compose config + MySQL health check + scripts/validate_task_catalog.ps1
   result: passed
   verified_at: 2026-07-24
 updated_at: 2026-07-24
