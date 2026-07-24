@@ -3,18 +3,18 @@
 ```yaml
 schema_version: 1
 current_milestone: M0
-milestone_status: active
-current_task: T00-03
+milestone_status: completed
+current_task: T00-04
 status: completed
-last_completed_task: T00-03
-next_task: T00-04
+last_completed_task: T00-04
+next_task: T01-01
 task_catalog: docs/superpowers/plans/2026-07-23-complete-project-task-catalog.md
 blockers: []
 active_regression: null
 suspended_task: null
 gate_reverification_required: false
 last_verification:
-  command: T00-03 scenario/scoring assertions + JSON parsing + governance tests + scripts/validate_task_catalog.ps1
+  command: python scripts/check_traceability.py + traceability unit tests + M1 document assertions + governance tests
   result: passed
   verified_at: 2026-07-24
 updated_at: 2026-07-24

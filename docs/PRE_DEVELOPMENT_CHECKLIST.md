@@ -28,7 +28,7 @@
 
 - [ ] 将当前文档分支评审并合入 `main`，确保团队不再从旧基线开始开发。
 - [ ] 确认仓库可见性、成员权限、分支保护和至少一名评审人。
-- [ ] 确认 Issue/任务管理方式，并把 M1 拆成可验收的小任务。
+- [x] 确认以 Task 目录管理开发工作，并把 M1 拆成可验收的小任务。
 - [ ] 确认代码版权归属；若计划公开仓库，选择并添加 `LICENSE`。
 
 ### 开发环境
@@ -42,11 +42,21 @@
 
 ### M1 契约
 
-- [ ] 固定客服退款场景的最小阶段、结束条件和 L4 固定话术。
-- [ ] 固定五维评分的首版行为事件、证据格式和确定性规则。
+- [x] 固定客服退款场景的最小阶段、结束条件和 L4 固定话术。
+- [x] 固定五维评分的首版行为事件、证据格式和确定性规则。
 - [ ] 定义最小用户、场景版本、训练会话、轮次、行为事件和评分数据模型。
-- [ ] 定义统一 API 错误格式和时间、ID、枚举命名约定。
-- [ ] 为 M1 写出可人工执行的主流程验收脚本。
+- [x] 定义统一 API 错误格式和时间、ID、枚举命名约定。
+- [x] 为 M1 写出可人工执行的主流程验收脚本。
+
+证据：
+
+- M1 Task 拆分：[`2026-07-23-complete-project-task-catalog.md`](./superpowers/plans/2026-07-23-complete-project-task-catalog.md)；
+- L4 场景：[`SCENARIO_CUSTOMER_REFUND_V1.md`](./SCENARIO_CUSTOMER_REFUND_V1.md)；
+- 五维评分：[`SCORING_RULES.md`](./SCORING_RULES.md)；
+- 公开数据命名与 API：[`DATA_CONVENTIONS.md`](./DATA_CONVENTIONS.md) 和
+  [`API_CONVENTIONS.md`](./API_CONVENTIONS.md)；
+- 需求归属与 M1 人工验收：[`REQUIREMENT_TRACEABILITY.md`](./REQUIREMENT_TRACEABILITY.md) 和
+  [`M1_ACCEPTANCE.md`](./M1_ACCEPTANCE.md)。
 
 ## 4. 里程碑阻塞项
 
