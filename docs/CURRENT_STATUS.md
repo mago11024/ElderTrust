@@ -4,13 +4,13 @@
 schema_version: 1
 current_milestone: M0
 milestone_status: active
-current_task: T00-02
-status: blocked
+current_task: T00-05
+status: regression_fix
 last_completed_task: T00-01
-next_task: T00-03
+next_task: T00-02
 task_catalog: docs/superpowers/plans/2026-07-23-complete-project-task-catalog.md
-blockers: [scripts/tests/test_show_current_task.ps1 is coupled to T00-01]
-active_regression: pending_bugfix_task
+blockers: []
+active_regression: T00-05
 suspended_task: T00-02
 gate_reverification_required: false
 last_verification:

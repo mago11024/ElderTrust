@@ -3,7 +3,7 @@ param(
     [string]$RepoRoot = '',
     [string]$CatalogPath = 'docs\superpowers\plans\2026-07-23-complete-project-task-catalog.md',
     [string]$MainPlanPath = 'docs\superpowers\plans\2026-07-23-m1-mvp-and-development-sequence.md',
-    [int]$ExpectedTaskCount = 65
+    [int]$ExpectedTaskCount = 66
 )
 
 Set-StrictMode -Version Latest
