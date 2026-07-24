@@ -29,7 +29,7 @@
 | pnpm | 11.4.0 | 与 Node.js 24 配套的当前稳定版本 |
 | Python | 3.12.10 | 保持项目 Python 3.12 硬边界，并使用最后一个提供 Windows 安装器的 3.12 维护版本 |
 | Docker Engine/CLI | 29.6.2 | 当前 29 系列安全修复版本 |
-| Docker Compose | 5.1.2 | 当前 Compose v2 后续兼容版本，使用 `docker compose` 子命令 |
+| Docker Compose | 5.1.4 | 当前 Compose v2 后续兼容版本，使用 `docker compose` 子命令 |
 | MySQL | 8.4.10 | MySQL 8.4 LTS 当前已发布修复版本 |
 
 `.tool-versions` 是开发工具精确版本的权威来源；`docker-compose.yml` 通过不可变的 MySQL 补丁版本标签锁定数据库镜像；文档必须与两者一致。
@@ -49,6 +49,7 @@ T00-01 只定义 M1 当前需要的应用和 MySQL 配置。AI、Redis、MinIO �
 
 `docker-compose.yml` 只定义 `mysql` 服务：
 
+- 显式使用稳定项目名 `anxin-training`，避免中文工作区名称无法归一化时解析失败；
 - 使用 `mysql:8.4.10`；
 - 从环境变量读取数据库名、普通用户和密码；
 - 提供适合本地开发的非敏感默认占位值；

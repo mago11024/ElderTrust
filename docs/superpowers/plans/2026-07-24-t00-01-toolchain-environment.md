@@ -90,7 +90,7 @@ nodejs 24.18.0
 pnpm 11.4.0
 python 3.12.10
 docker 29.6.2
-docker-compose 5.1.2
+docker-compose 5.1.4
 ```
 
 - [ ] **Step 3: Create the non-secret environment example**
@@ -118,6 +118,8 @@ DATABASE_URL=mysql+asyncmy://anxin_app:local-only-change-me@localhost:3306/anxin
 Create `docker-compose.yml` with:
 
 ```yaml
+name: anxin-training
+
 services:
   mysql:
     image: mysql:8.4.10
@@ -154,7 +156,7 @@ $expected = [ordered]@{
   pnpm = '11.4.0'
   python = '3.12.10'
   docker = '29.6.2'
-  'docker-compose' = '5.1.2'
+  'docker-compose' = '5.1.4'
 }
 $actual = @{}
 Get-Content -LiteralPath '.tool-versions' | ForEach-Object {
@@ -208,7 +210,7 @@ Run:
 
 ```powershell
 $development = Get-Content -Raw -LiteralPath 'docs/DEVELOPMENT.md'
-$required = @('24.18.0', '11.4.0', '3.12.10', '29.6.2', '5.1.2', '8.4.10')
+$required = @('24.18.0', '11.4.0', '3.12.10', '29.6.2', '5.1.4', '8.4.10')
 $missing = @($required | Where-Object { $development -notmatch [regex]::Escape($_) })
 if ($missing.Count -gt 0) { throw "RED: DEVELOPMENT.md is missing locked versions: $($missing -join ', ')" }
 throw 'RED setup invalid: documentation already contains every locked version.'
