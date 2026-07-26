@@ -101,6 +101,28 @@ function Test-IsEmptyMapping {
   return $null -ne $Value -and -not ($Value -is [string]) -and @($Value.PSObject.Properties).Count -eq 0
 }
 
+function Test-IsUnrestrictedPullRequest {
+  param(
+    [object]$Value,
+
+    [object]$Node
+  )
+
+  if ($null -eq $Node) {
+    return $false
+  }
+
+  if ([string]$Node.kind -ceq 'scalar') {
+    return [string]$Value -ceq '' -and [string]$Node.tag -ceq 'tag:yaml.org,2002:str' -and [string]$Node.value -ceq '' -and [string]::IsNullOrEmpty([string]$Node.style)
+  }
+
+  if ([string]$Node.kind -ceq 'mapping') {
+    return (Test-IsEmptyMapping -Value $Value) -and [string]$Node.entries -ceq '0'
+  }
+
+  return $false
+}
+
 if (-not (Test-Path -LiteralPath $workflowPath -PathType Leaf)) {
   Add-Failure -Message "Required CI workflow is missing: $workflowPath"
 }
@@ -117,19 +139,44 @@ import sys
 
 try:
     import yaml
+    from yaml.nodes import MappingNode, ScalarNode
 except ImportError as error:
     raise SystemExit('PyYAML is required to parse ci.yml: {}'.format(error))
 
+def mapping_value(node, key):
+    if not isinstance(node, MappingNode):
+        return None
+    for key_node, value_node in node.value:
+        if isinstance(key_node, ScalarNode) and key_node.value == key:
+            return value_node
+    return None
+
+def describe_pull_request_node(document_node):
+    on_node = mapping_value(document_node, 'on')
+    pull_request_node = mapping_value(on_node, 'pull_request')
+    if isinstance(pull_request_node, ScalarNode):
+        return {
+            'kind': 'scalar',
+            'tag': pull_request_node.tag,
+            'value': pull_request_node.value,
+            'style': pull_request_node.style,
+        }
+    if isinstance(pull_request_node, MappingNode):
+        return {'kind': 'mapping', 'entries': len(pull_request_node.value)}
+    return {'kind': 'missing'}
+
 try:
     with open(sys.argv[1], encoding='utf-8') as workflow_file:
-        document = yaml.load(workflow_file, Loader=yaml.BaseLoader)
+        workflow_source = workflow_file.read()
+        document = yaml.load(workflow_source, Loader=yaml.BaseLoader)
+        document_node = yaml.compose(workflow_source, Loader=yaml.BaseLoader)
 except Exception as error:
     raise SystemExit('Unable to parse ci.yml as YAML: {}'.format(error))
 
 if not isinstance(document, dict):
     raise SystemExit('ci.yml must parse to a mapping')
 
-print(json.dumps(document))
+print(json.dumps({'workflow': document, 'pull_request_node': describe_pull_request_node(document_node)}))
 '@
     $parseOutput = @()
     $parseExitCode = $null
@@ -148,11 +195,14 @@ print(json.dumps(document))
     }
     else {
       try {
-        $workflow = ($parseOutput | Out-String | ConvertFrom-Json -ErrorAction Stop)
+        $parsedWorkflow = ($parseOutput | Out-String | ConvertFrom-Json -ErrorAction Stop)
+        $workflow = Get-RequiredProperty -Object $parsedWorkflow -Name 'workflow' -Context 'Python/PyYAML parsed result'
+        $pullRequestNode = Get-RequiredProperty -Object $parsedWorkflow -Name 'pull_request_node' -Context 'Python/PyYAML parsed result'
       }
       catch {
         Add-Failure -Message "Python/PyYAML did not return a valid parsed workflow model: $($_.Exception.Message)"
         $workflow = $null
+        $pullRequestNode = $null
       }
 
       if ($null -ne $workflow) {
@@ -166,7 +216,7 @@ print(json.dumps(document))
           }
         }
         $pullRequest = Get-RequiredProperty -Object $triggers -Name 'pull_request' -Context 'Workflow triggers'
-        if ($null -ne $pullRequest -and -not [string]::IsNullOrEmpty([string]$pullRequest) -and -not (Test-IsEmptyMapping -Value $pullRequest)) {
+        if (-not (Test-IsUnrestrictedPullRequest -Value $pullRequest -Node $pullRequestNode)) {
           Add-Failure -Message 'pull_request should run for all pull requests without restrictions.'
         }
         $push = Get-RequiredProperty -Object $triggers -Name 'push' -Context 'Workflow triggers'
