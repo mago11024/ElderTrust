@@ -2,19 +2,31 @@
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     UUID4,
+    AfterValidator,
     BaseModel,
     BeforeValidator,
     ConfigDict,
     Field,
     PositiveInt,
     StringConstraints,
+    ValidationInfo,
+    model_validator,
 )
 
-NonEmptyString = Annotated[str, StringConstraints(min_length=1)]
+
+def validate_non_blank(value: str) -> str:
+    """Reject blank strings without changing the supplied content."""
+
+    if not value.strip():
+        raise ValueError("string must contain non-whitespace characters")
+    return value
+
+
+NonEmptyString = Annotated[str, StringConstraints(min_length=1), AfterValidator(validate_non_blank)]
 StableIdentifier = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*$", min_length=1)]
 OpportunityIdentifier = Annotated[
     str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$", min_length=3)
@@ -22,9 +34,11 @@ OpportunityIdentifier = Annotated[
 Percentage = Annotated[PositiveInt, Field(le=100)]
 
 
-def validate_canonical_uuid4_text(value: object) -> object:
+def validate_canonical_uuid4_text(value: object, info: ValidationInfo) -> object:
     """Require lowercase, hyphenated UUID-v4 JSON text before UUID parsing."""
 
+    if info.mode != "json":
+        return value
     if not isinstance(value, str) or len(value) != 36:
         raise ValueError("UUID v4 must use lowercase hyphenated JSON text")
     if value[8] != "-" or value[13] != "-" or value[18] != "-" or value[23] != "-":
@@ -136,11 +150,32 @@ class SafetyChoiceConfig(ConfigModel):
     end_reason: StableIdentifier
     control_events: list[ControlEventMapping] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def validate_safety_stop_transition(self) -> Self:
+        if (
+            self.transition.target_kind != TransitionTargetKind.END
+            or self.transition.target_id != EndState.SAFETY_STOPPED
+        ):
+            raise ValueError("global safety choices must end at safety_stopped")
+        return self
+
 
 class EndConditionConfig(ConfigModel):
     end_state: EndState
     condition_type: EndConditionType
     triggering_event_types: list[StableIdentifier]
+
+    @model_validator(mode="after")
+    def validate_local_condition_contract(self) -> Self:
+        if self.condition_type == EndConditionType.NORMAL_COMPLETION:
+            if self.end_state != EndState.COMPLETED_SAFE or self.triggering_event_types:
+                raise ValueError("normal_completion requires completed_safe with no triggers")
+        elif self.condition_type == EndConditionType.RISK_OVERRIDE:
+            if self.end_state != EndState.COMPLETED_RISKY or not self.triggering_event_types:
+                raise ValueError("risk_override requires completed_risky with triggers")
+        elif self.end_state != EndState.SAFETY_STOPPED or not self.triggering_event_types:
+            raise ValueError("safety_stop requires safety_stopped with triggers")
+        return self
 
 
 class ExternalActionPolicy(ConfigModel):
