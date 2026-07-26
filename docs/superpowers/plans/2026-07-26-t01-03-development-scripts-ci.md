@@ -22,6 +22,7 @@
 - Create `.editorconfig`: define repository text-format rules.
 - Modify `.gitignore`: preserve `.worktrees/` and add generated/local artifacts.
 - Modify `docker-compose.yml`: add the MySQL startup health probe interval used by `--wait`.
+- Modify `backend/pyproject.toml`: declare PyYAML in the shared `dev` dependency set used by local workflow-contract tests and CI.
 - Modify `docs/DEVELOPMENT.md`: replace planned commands with the implemented local and CI workflow.
 - Modify `docs/CURRENT_STATUS.md`: mark T01-03 `in_progress` at execution start and `completed` only after fresh verification.
 
@@ -625,7 +626,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: python -m pip install -e ".[dev]" "PyYAML>=6,<7"
+        run: python -m pip install -e ".[dev]"
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -694,7 +695,7 @@ Update the command contract in `docs/DEVELOPMENT.md` with:
 ```powershell
 # First-time backend dependencies
 cd backend
-python -m pip install -e ".[dev]" "PyYAML>=6,<7"
+python -m pip install -e ".[dev]"
 cd ..
 
 # First-time frontend dependencies

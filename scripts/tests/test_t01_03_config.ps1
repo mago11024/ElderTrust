@@ -12,6 +12,7 @@ $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $editorConfigPath = Join-Path $repoRoot '.editorconfig'
 $gitIgnorePath = Join-Path $repoRoot '.gitignore'
 $composePath = Join-Path $repoRoot 'docker-compose.yml'
+$developmentPath = Join-Path $repoRoot 'docs\DEVELOPMENT.md'
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Assert-PathExists {
@@ -42,6 +43,23 @@ function Assert-Equal {
 
   if ($Actual -ne $Expected) {
     $failures.Add("$Message (expected: '$Expected'; actual: '$Actual')")
+  }
+}
+
+function Assert-Contains {
+  param(
+    [Parameter(Mandatory)]
+    [string]$Actual,
+
+    [Parameter(Mandatory)]
+    [string]$Expected,
+
+    [Parameter(Mandatory)]
+    [string]$Message
+  )
+
+  if (-not $Actual.Contains($Expected)) {
+    $failures.Add("$Message (missing: '$Expected')")
   }
 }
 
@@ -157,6 +175,20 @@ function Assert-GitIgnoreBehavior {
 Assert-PathExists -Path $editorConfigPath -Message '.editorconfig should exist'
 Assert-PathExists -Path $gitIgnorePath -Message '.gitignore should exist'
 Assert-PathExists -Path $composePath -Message 'docker-compose.yml should exist'
+Assert-PathExists -Path $developmentPath -Message 'docs/DEVELOPMENT.md should exist'
+
+if (Test-Path -LiteralPath $developmentPath -PathType Leaf) {
+  $development = [IO.File]::ReadAllText($developmentPath)
+  foreach ($expected in @(
+      'powershell -ExecutionPolicy Bypass -File scripts\dev.ps1',
+      'powershell -ExecutionPolicy Bypass -File scripts\test.ps1',
+      'docker compose stop mysql',
+      'test:e2e',
+      'Ctrl+C'
+    )) {
+    Assert-Contains -Actual $development -Expected $expected -Message 'Development documentation should contain the unified workflow contract'
+  }
+}
 
 if (Test-Path -LiteralPath $editorConfigPath -PathType Leaf) {
   $editorConfig = [IO.File]::ReadAllText($editorConfigPath)

@@ -71,39 +71,43 @@ Windows 11 是当前主要开发与容器验收环境。仓库脚本优先提供
 
 M1 只要求 MySQL 可运行。Redis 和 MinIO 仍是第一版技术基线，但应在短期状态、限流、录音或素材功能首次需要时接入；在此之前通过明确接口和测试替身避免业务代码绑定具体基础设施。
 
-## 5. 计划命令契约
+## 5. 已实现的本地与 CI 命令
 
-工程骨架完成后，应提供以下入口或等价脚本：
+首次安装依赖时，在仓库根目录执行：
 
 ```powershell
-# M1 基础设施
-docker compose up -d mysql
-
-# 进入语音和短期状态里程碑后
-docker compose up -d redis minio
-
-# 后端
 cd backend
-python -m venv .venv
 python -m pip install -e ".[dev]"
-python -m alembic upgrade head
-python -m uvicorn app.main:app --reload
+cd ..
 
-# 前端
 cd frontend
-pnpm install
-pnpm dev
-
-# 测试
-cd backend
-python -m pytest
-
-cd ../frontend
-pnpm test
-pnpm exec playwright test
+pnpm install --frozen-lockfile
+cd ..
 ```
 
-最终命令以实际 `pyproject.toml`、`package.json` 和脚本为准。任何变化都必须同步更新本文件。
+`backend[dev]` 包含本地 CI 工作流解析所需的 PyYAML；不要在本地或 CI 单独临时安装它。
+
+统一启动入口会等待 MySQL 健康后，在同一个终端显示后端和前端日志：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
+```
+
+按 `Ctrl+C` 会停止本次启动的后端和前端应用进程；MySQL 容器会保留。需要停止 MySQL 时，另行执行：
+
+```powershell
+docker compose stop mysql
+```
+
+统一质量入口复用仓库 PowerShell 契约测试、后端检查和前端检查：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\test.ps1
+```
+
+当前没有 `test:e2e` 时，统一测试入口会明确跳过该预留阶段；当 `frontend/package.json` 定义精确的 `test:e2e` 脚本后，它会自动执行。CI 安装同一套 `backend[dev]` 与冻结的前端锁文件，然后只调用 `scripts/test.ps1`。
+
+手工 smoke 只在交互式终端执行且保持有界：启动 `scripts\dev.ps1`，确认 `http://127.0.0.1:8000/health` 返回健康响应并打开 Vite 根地址 `http://localhost:5173/`；随后按 `Ctrl+C`，最后用 `docker compose ps mysql` 确认 MySQL 仍在运行。自动化验收不启动长期运行的真实开发服务。
 
 ## 6. 环境变量
 

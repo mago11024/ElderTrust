@@ -58,3 +58,14 @@
 - 影响 Gate：无；T01-13 与 T01-18 的范围和依赖不变。
 - 需要重新验证：需求追踪校验和任务目录结构校验。
 - 关联 Issue/PR：无。
+
+## 2026-07-26：澄清 T01-03 的共享 CI 解析依赖
+
+- 原因：T01-03 的 CI 工作流契约测试使用 PyYAML 解析工作流；提交 `f264d68` 将该依赖从 CI 临时安装移入 `backend[dev]`，以保持干净本地环境与 CI 的依赖集合一致。
+- 变更前：T01-03 Files 未列出 `backend/pyproject.toml`；CI 单独安装 PyYAML。
+- 变更后：T01-03 Files 增加 `Modify: backend/pyproject.toml`；PyYAML 由共享 `dev` extra 提供，CI 只安装 `backend[dev]`。
+- 影响需求：不改变功能或验收目标；澄清本地与 CI 质量入口使用同一依赖契约。
+- 影响 Task：仅澄清进行中的 T01-03 文件范围；依赖和下游 Task 不变。
+- 影响 Gate：无。
+- 需要重新验证：T01-03 CI 契约测试、统一测试入口、需求追踪与任务目录结构校验。
+- 关联 Issue/PR：提交 `f264d68`。

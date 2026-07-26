@@ -281,6 +281,7 @@ T00-04 负责把上表展开成逐条需求映射；任何需求新增或优先�
 - Create: `.editorconfig`
 - Modify: `.gitignore`
 - Modify: `docker-compose.yml`
+- Modify: `backend/pyproject.toml`
 - Modify: `docs/DEVELOPMENT.md`
 
 - [ ] 统一启动 MySQL、后端和前端的开发入口。
