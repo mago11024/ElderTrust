@@ -279,7 +279,7 @@ T00-04 负责把上表展开成逐条需求映射；任何需求新增或优先�
 - Create: `scripts/test.ps1`
 - Create: `.github/workflows/ci.yml`
 - Create: `.editorconfig`
-- Create: `.gitignore`
+- Modify: `.gitignore`
 - Modify: `docker-compose.yml`
 - Modify: `docs/DEVELOPMENT.md`
 
