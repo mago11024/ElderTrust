@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $workflowPath = Join-Path $repoRoot '.github\workflows\ci.yml'
+$backendProjectPath = Join-Path $repoRoot 'backend\pyproject.toml'
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Add-Failure {
@@ -127,6 +128,10 @@ if (-not (Test-Path -LiteralPath $workflowPath -PathType Leaf)) {
   Add-Failure -Message "Required CI workflow is missing: $workflowPath"
 }
 else {
+  $backendProject = [IO.File]::ReadAllText($backendProjectPath)
+  if ($backendProject -notmatch '(?s)\[project\.optional-dependencies\].*?dev\s*=\s*\[[^\]]*"PyYAML>=6,<7"') {
+    Add-Failure -Message 'backend[dev] should declare PyYAML>=6,<7 for the local CI workflow parser test.'
+  }
   $python = Get-Command -Name 'python' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($null -eq $python) {
     Add-Failure -Message 'Python executable was not found; cannot parse the CI workflow with PyYAML.'
@@ -273,7 +278,7 @@ print(json.dumps({'workflow': document, 'pull_request_node': describe_pull_reque
           Assert-Equal -Actual ([string](Get-RequiredProperty -Object $nodeWith -Name 'cache' -Context 'Step 4 with')) -Expected 'pnpm' -Message 'Step 4 cache'
           Assert-Equal -Actual ([string](Get-RequiredProperty -Object $nodeWith -Name 'cache-dependency-path' -Context 'Step 4 with')) -Expected 'frontend/pnpm-lock.yaml' -Message 'Step 4 cache dependency path'
 
-          Assert-Equal -Actual ([string](Get-RequiredProperty -Object $steps[4] -Name 'run' -Context 'Step 5')) -Expected 'python -m pip install -e "backend[dev]" "PyYAML>=6,<7"' -Message 'Step 5 backend dependency installation'
+          Assert-Equal -Actual ([string](Get-RequiredProperty -Object $steps[4] -Name 'run' -Context 'Step 5')) -Expected 'python -m pip install -e "backend[dev]"' -Message 'Step 5 backend dependency installation'
           Assert-Equal -Actual ([string](Get-RequiredProperty -Object $steps[5] -Name 'run' -Context 'Step 6')) -Expected 'pnpm install --frozen-lockfile' -Message 'Step 6 frontend dependency installation'
           Assert-Equal -Actual ([string](Get-RequiredProperty -Object $steps[5] -Name 'working-directory' -Context 'Step 6')) -Expected 'frontend' -Message 'Step 6 working directory'
           Assert-Equal -Actual ([string](Get-RequiredProperty -Object $steps[6] -Name 'run' -Context 'Step 7')) -Expected 'powershell -ExecutionPolicy Bypass -File scripts/test.ps1' -Message 'Step 7 repository checks command'
