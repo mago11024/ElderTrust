@@ -72,6 +72,19 @@ function Join-WindowsArguments {
   return (($Arguments | ForEach-Object { ConvertTo-WindowsArgument -Argument $_ }) -join ' ')
 }
 
+function Assert-SafeBatchArguments {
+  param(
+    [Parameter(Mandatory)]
+    [string[]]$Arguments
+  )
+
+  foreach ($argument in $Arguments) {
+    if ($argument -notmatch '^[A-Za-z0-9._:-]+$') {
+      throw "Batch application argument is not a safe fixed token: $argument"
+    }
+  }
+}
+
 function Start-ManagedApplication {
   param(
     [Parameter(Mandatory)]
@@ -91,16 +104,19 @@ function Start-ManagedApplication {
   )
 
   Write-Host "START: $Name"
-  $argumentLine = Join-WindowsArguments -Arguments $Arguments
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
   if ([IO.Path]::GetExtension($Executable) -in @('.cmd', '.bat')) {
-    $commandLine = (ConvertTo-WindowsArgument -Argument $Executable) + ' ' + $argumentLine
+    if ($Executable.Contains('"')) {
+      throw "Batch application path contains an unsupported quote: $Executable"
+    }
+    Assert-SafeBatchArguments -Arguments $Arguments
+    $batchArguments = $Arguments -join ' '
     $startInfo.FileName = $CommandHostExecutable
-    $startInfo.Arguments = Join-WindowsArguments -Arguments @('/d', '/s', '/c', $commandLine)
+    $startInfo.Arguments = '/d /s /c ""{0}" {1}"' -f $Executable, $batchArguments
   }
   else {
     $startInfo.FileName = $Executable
-    $startInfo.Arguments = $argumentLine
+    $startInfo.Arguments = Join-WindowsArguments -Arguments $Arguments
   }
   $startInfo.WorkingDirectory = $WorkingDirectory
   $startInfo.UseShellExecute = $false

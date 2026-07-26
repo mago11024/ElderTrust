@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $entrypointPath = Join-Path $repoRoot 'scripts\dev.ps1'
 $temporaryBase = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$fixtureRoot = Join-Path $temporaryBase ("t01-03-dev-entrypoint-临时-{0}" -f [Guid]::NewGuid().ToString('N'))
+$fixtureRoot = Join-Path $temporaryBase ("t01 03 & 安信 {0}" -f [Guid]::NewGuid().ToString('N'))
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Assert-Equal {
