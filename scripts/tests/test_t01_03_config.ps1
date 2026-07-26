@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+  [string]$DockerCommand = 'docker'
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -11,68 +13,143 @@ $composePath = Join-Path $repoRoot 'docker-compose.yml'
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Assert-PathExists {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Path,
+  param(
+    [Parameter(Mandatory)]
+    [string]$Path,
 
-        [Parameter(Mandatory)]
-        [string]$Message
-    )
+    [Parameter(Mandatory)]
+    [string]$Message
+  )
 
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        $failures.Add("$Message (missing: '$Path')")
-    }
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    $failures.Add("$Message (missing: '$Path')")
+  }
 }
 
-function Assert-Matches {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Actual,
+function Assert-Equal {
+  param(
+    [Parameter(Mandatory)]
+    [object]$Actual,
 
-        [Parameter(Mandatory)]
-        [string]$Pattern,
+    [Parameter(Mandatory)]
+    [object]$Expected,
 
-        [Parameter(Mandatory)]
-        [string]$Message
-    )
+    [Parameter(Mandatory)]
+    [string]$Message
+  )
 
-    if ($Actual -notmatch $Pattern) {
-        $failures.Add("$Message (pattern: '$Pattern')")
-    }
+  if ($Actual -ne $Expected) {
+    $failures.Add("$Message (expected: '$Expected'; actual: '$Actual')")
+  }
 }
 
-function Assert-Contains {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Actual,
+function Assert-EditorConfigRoot {
+  param(
+    [Parameter(Mandatory)]
+    [string]$Content
+  )
 
-        [Parameter(Mandatory)]
-        [string]$Expected,
-
-        [Parameter(Mandatory)]
-        [string]$Message
-    )
-
-    if (-not $Actual.Contains($Expected)) {
-        $failures.Add("$Message (missing: '$Expected')")
+  $preamble = [System.Collections.Generic.List[string]]::new()
+  foreach ($line in ($Content -split "`r?`n")) {
+    if ($line -match '^\[.*\]$') {
+      break
     }
+    $preamble.Add($line)
+  }
+
+  if (-not ($preamble -match '^\s*root\s*=\s*true\s*$')) {
+    $failures.Add('.editorconfig should set root = true before its first section.')
+  }
 }
 
-function Assert-NotMatches {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Actual,
+function Get-EditorConfigSection {
+  param(
+    [Parameter(Mandatory)]
+    [string]$Content,
 
-        [Parameter(Mandatory)]
-        [string]$Pattern,
+    [Parameter(Mandatory)]
+    [string]$Header
+  )
 
-        [Parameter(Mandatory)]
-        [string]$Message
-    )
-
-    if ($Actual -match $Pattern) {
-        $failures.Add("$Message (unexpected pattern: '$Pattern')")
+  $inSection = $false
+  $lines = [System.Collections.Generic.List[string]]::new()
+  foreach ($line in ($Content -split "`r?`n")) {
+    if ($line -eq $Header) {
+      $inSection = $true
+      continue
     }
+
+    if ($inSection -and $line -match '^\[.*\]$') {
+      break
+    }
+
+    if ($inSection) {
+      $lines.Add($line)
+    }
+  }
+
+  return ,$lines.ToArray()
+}
+
+function Assert-EditorConfigValue {
+  param(
+    [Parameter(Mandatory)]
+    [AllowEmptyCollection()]
+    [AllowEmptyString()]
+    [string[]]$Section,
+
+    [Parameter(Mandatory)]
+    [string]$Header,
+
+    [Parameter(Mandatory)]
+    [string]$Key,
+
+    [Parameter(Mandatory)]
+    [string]$Value
+  )
+
+  if ($Section.Count -eq 0) {
+    $failures.Add(".editorconfig should contain section '$Header'")
+    return
+  }
+
+  $pattern = '^\s*{0}\s*=\s*{1}\s*$' -f [regex]::Escape($Key), [regex]::Escape($Value)
+  if (-not ($Section -match $pattern)) {
+    $failures.Add(".editorconfig section '$Header' should set $Key = $Value")
+  }
+}
+
+function Assert-GitIgnoreBehavior {
+  param(
+    [Parameter(Mandatory)]
+    [string]$Path,
+
+    [Parameter(Mandatory)]
+    [bool]$ShouldIgnore
+  )
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    $null = & git -C $repoRoot check-ignore --no-index --quiet -- $Path 2>&1
+    $exitCode = $LASTEXITCODE
+    $output = & git -C $repoRoot check-ignore --no-index --verbose -- $Path 2>&1
+  }
+  finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+
+  $isIgnored = $exitCode -eq 0
+  if ($exitCode -ne 0 -and $exitCode -ne 1) {
+    $failures.Add("git check-ignore failed for '$Path' (exit code $exitCode): $($output | Out-String)")
+    return
+  }
+
+  if ($isIgnored -ne $ShouldIgnore) {
+    $expectedState = if ($ShouldIgnore) { 'ignored' } else { 'not ignored' }
+    $actualState = if ($isIgnored) { 'ignored' } else { 'not ignored' }
+    $failures.Add(".gitignore should leave '$Path' $expectedState (actual: $actualState; diagnostics: $($output | Out-String))")
+  }
 }
 
 Assert-PathExists -Path $editorConfigPath -Message '.editorconfig should exist'
@@ -80,51 +157,93 @@ Assert-PathExists -Path $gitIgnorePath -Message '.gitignore should exist'
 Assert-PathExists -Path $composePath -Message 'docker-compose.yml should exist'
 
 if (Test-Path -LiteralPath $editorConfigPath -PathType Leaf) {
-    $editorConfig = [IO.File]::ReadAllText($editorConfigPath)
-    Assert-Matches -Actual $editorConfig -Pattern '(?m)^root\s*=\s*true\s*$' -Message '.editorconfig should declare the repository root'
-    Assert-Matches -Actual $editorConfig -Pattern '(?m)^charset\s*=\s*utf-8\s*$' -Message '.editorconfig should use UTF-8'
-    Assert-Matches -Actual $editorConfig -Pattern '(?m)^end_of_line\s*=\s*lf\s*$' -Message '.editorconfig should use LF endings'
-    Assert-Matches -Actual $editorConfig -Pattern '(?ms)^\[\*\.py\].*?^indent_size\s*=\s*4\s*$' -Message '.editorconfig should use four spaces for Python'
-    Assert-Matches -Actual $editorConfig -Pattern '(?ms)^\[\*\.\{vue,ts,js,json,yml,yaml,ps1\}\].*?^indent_size\s*=\s*2\s*$' -Message '.editorconfig should use two spaces for app and script files'
+  $editorConfig = [IO.File]::ReadAllText($editorConfigPath)
+  Assert-EditorConfigRoot -Content $editorConfig
+  $globalSection = Get-EditorConfigSection -Content $editorConfig -Header '[*]'
+  $pythonSection = Get-EditorConfigSection -Content $editorConfig -Header '[*.py]'
+  $appAndScriptSection = Get-EditorConfigSection -Content $editorConfig -Header '[*.{vue,ts,js,json,yml,yaml,ps1}]'
+  $markdownSection = Get-EditorConfigSection -Content $editorConfig -Header '[*.md]'
+
+  Assert-EditorConfigValue -Section $globalSection -Header '[*]' -Key 'charset' -Value 'utf-8'
+  Assert-EditorConfigValue -Section $globalSection -Header '[*]' -Key 'end_of_line' -Value 'lf'
+  Assert-EditorConfigValue -Section $globalSection -Header '[*]' -Key 'insert_final_newline' -Value 'true'
+  Assert-EditorConfigValue -Section $globalSection -Header '[*]' -Key 'trim_trailing_whitespace' -Value 'true'
+  Assert-EditorConfigValue -Section $globalSection -Header '[*]' -Key 'indent_style' -Value 'space'
+  Assert-EditorConfigValue -Section $pythonSection -Header '[*.py]' -Key 'indent_size' -Value '4'
+  Assert-EditorConfigValue -Section $appAndScriptSection -Header '[*.{vue,ts,js,json,yml,yaml,ps1}]' -Key 'indent_size' -Value '2'
+  Assert-EditorConfigValue -Section $markdownSection -Header '[*.md]' -Key 'trim_trailing_whitespace' -Value 'false'
 }
 
 if (Test-Path -LiteralPath $gitIgnorePath -PathType Leaf) {
-    $gitIgnore = [IO.File]::ReadAllText($gitIgnorePath)
-    Assert-Contains -Actual $gitIgnore -Expected '.worktrees/' -Message '.gitignore should ignore isolated worktrees'
-    Assert-Contains -Actual $gitIgnore -Expected '.env' -Message '.gitignore should ignore environment files'
-    Assert-Contains -Actual $gitIgnore -Expected '!.env.example' -Message '.gitignore should retain the environment template'
-    Assert-Matches -Actual $gitIgnore -Pattern '(?m)^__pycache__/$' -Message '.gitignore should ignore Python caches'
-    Assert-Matches -Actual $gitIgnore -Pattern '(?m)^\.venv/$' -Message '.gitignore should ignore the Python virtual environment'
-    Assert-Matches -Actual $gitIgnore -Pattern '(?m)^node_modules/$' -Message '.gitignore should ignore Node dependencies'
-    Assert-Matches -Actual $gitIgnore -Pattern '(?m)^dist/$' -Message '.gitignore should ignore build output'
-    Assert-NotMatches -Actual $gitIgnore -Pattern '(?m)^pnpm-lock\.yaml$' -Message '.gitignore must not ignore pnpm-lock.yaml'
+  foreach ($expectation in @(
+      @{ Path = '.env'; ShouldIgnore = $true },
+      @{ Path = '.env.example'; ShouldIgnore = $false },
+      @{ Path = 'frontend/pnpm-lock.yaml'; ShouldIgnore = $false },
+      @{ Path = '.worktrees/example'; ShouldIgnore = $true },
+      @{ Path = 'backend/__pycache__/example.pyc'; ShouldIgnore = $true },
+      @{ Path = 'backend/.venv/example'; ShouldIgnore = $true },
+      @{ Path = 'frontend/node_modules/example'; ShouldIgnore = $true },
+      @{ Path = 'frontend/dist/example'; ShouldIgnore = $true },
+      @{ Path = 'backend/.coverage'; ShouldIgnore = $true },
+      @{ Path = 'frontend/coverage/lcov.info'; ShouldIgnore = $true }
+    )) {
+    Assert-GitIgnoreBehavior -Path $expectation.Path -ShouldIgnore $expectation.ShouldIgnore
+  }
 }
 
 if (Test-Path -LiteralPath $composePath -PathType Leaf) {
-    $compose = [IO.File]::ReadAllText($composePath)
-    Assert-Matches -Actual $compose -Pattern '(?m)^\s*start_interval:\s*2s\s*$' -Message 'MySQL healthcheck should use a two-second start interval'
-    Assert-NotMatches -Actual $compose -Pattern '(?m)^\s{2}(redis|minio):\s*$' -Message 'Compose must not define Redis or MinIO services'
-
+  $docker = Get-Command -Name $DockerCommand -ErrorAction SilentlyContinue
+  if ($null -eq $docker) {
+    $failures.Add("Docker command '$DockerCommand' was not found; install Docker Desktop or make docker available on PATH.")
+  }
+  else {
+    $composeOutput = @()
+    $composeExitCode = $null
     $previousErrorActionPreference = $ErrorActionPreference
     try {
-        $ErrorActionPreference = 'Continue'
-        $composeOutput = & docker compose -f $composePath config 2>&1
-        $composeExitCode = $LASTEXITCODE
+      $ErrorActionPreference = 'Continue'
+      $composeOutput = & $DockerCommand compose -f $composePath config --format json 2>&1
+      $composeExitCode = $LASTEXITCODE
     }
     finally {
-        $ErrorActionPreference = $previousErrorActionPreference
+      $ErrorActionPreference = $previousErrorActionPreference
     }
 
     if ($composeExitCode -ne 0) {
-        $failures.Add("docker compose config failed (exit code $composeExitCode): $($composeOutput | Out-String)")
+      $failures.Add("docker compose config failed (exit code $composeExitCode): $($composeOutput | Out-String)")
     }
+    else {
+      try {
+        $composeConfig = ($composeOutput | Out-String | ConvertFrom-Json -ErrorAction Stop)
+      }
+      catch {
+        $failures.Add("docker compose config did not produce valid JSON: $($_.Exception.Message)")
+        $composeConfig = $null
+      }
+
+      if ($null -ne $composeConfig) {
+        $serviceNames = @($composeConfig.services.psobject.Properties.Name)
+        Assert-Equal -Actual ($serviceNames -join ',') -Expected 'mysql' -Message 'Normalized Compose services should contain only mysql'
+
+        if ($null -eq $composeConfig.services.mysql) {
+          $failures.Add('Normalized Compose configuration should define the mysql service.')
+        }
+        elseif ($null -eq $composeConfig.services.mysql.healthcheck) {
+          $failures.Add('Normalized MySQL Compose configuration should define a healthcheck.')
+        }
+        else {
+          Assert-Equal -Actual $composeConfig.services.mysql.healthcheck.start_interval -Expected '2s' -Message 'MySQL healthcheck start_interval should be two seconds'
+        }
+      }
+    }
+  }
 }
 
 if ($failures.Count -gt 0) {
-    foreach ($failure in $failures) {
-        Write-Error $failure
-    }
-    exit 1
+  foreach ($failure in $failures) {
+    Write-Error -ErrorAction Continue $failure
+  }
+  exit 1
 }
 
 Write-Output 'PASS: T01-03 development configuration is valid.'
