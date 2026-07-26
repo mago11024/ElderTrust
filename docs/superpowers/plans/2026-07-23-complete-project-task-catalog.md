@@ -81,6 +81,7 @@
 
 ```text
 T00-01 → T00-02 → T00-03 → T00-04
+    └──→ T00-05（治理回归修复，完成后恢复被暂停 Task）
     ↓
 T01-01 + T01-02 → T01-03
     ↓
@@ -188,6 +189,22 @@ T00-04 负责把上表展开成逐条需求映射；任何需求新增或优先�
 
 **不包含：** Pydantic 模型、页面和自由文本识别。
 
+### T00-05：修复当前任务治理测试的状态耦合（S）
+
+**依赖：** T00-01。
+
+**Files:**
+
+- Modify: `scripts/tests/test_show_current_task.ps1`
+
+- [ ] 移除测试对 `current_task: T00-01` 和对应输出的硬编码依赖。
+- [ ] 保证未知 Task 用例始终实际替换当前 Task ID。
+- [ ] 覆盖 T00-01、T00-02 和 T07-06 状态夹具，证明测试不依赖当前开发指针。
+
+**验收：** `scripts/tests/test_show_current_task.ps1` 在真实当前状态及 T00-01、T00-02、T07-06 临时状态下通过；原任务目录校验与测试继续通过。
+
+**不包含：** 修改 `show_current_task.ps1` 生产行为、产品功能或已完成 Task 的历史范围。
+
 ### T00-04：建立需求追踪与 M1 验收脚本（S）
 
 **依赖：** T00-03。
@@ -262,8 +279,9 @@ T00-04 负责把上表展开成逐条需求映射；任何需求新增或优先�
 - Create: `scripts/test.ps1`
 - Create: `.github/workflows/ci.yml`
 - Create: `.editorconfig`
-- Create: `.gitignore`
+- Modify: `.gitignore`
 - Modify: `docker-compose.yml`
+- Modify: `backend/pyproject.toml`
 - Modify: `docs/DEVELOPMENT.md`
 
 - [ ] 统一启动 MySQL、后端和前端的开发入口。
@@ -1407,7 +1425,7 @@ T00-04 负责把上表展开成逐条需求映射；任何需求新增或优先�
 
 ### 12.1 粒度
 
-- 共 65 个 Task：M0 4 个、M1 18 个、M2 9 个、M3 8 个、M4 9 个、M5 5 个、M6 6 个、M7 6 个；
+- 共 66 个 Task：M0 5 个、M1 18 个、M2 9 个、M3 8 个、M4 9 个、M5 5 个、M6 6 个、M7 6 个；
 - 每个 Task 只有一个主要结果，最大的 Task 是一个跨前后端纵向切片；
 - 原计划中“状态机 + 安全”“评分 + 复盘”“鉴权 + 审计”等耦合已拆开；
 - 没有把测试、文档或安全留成没有所属 Task 的尾项。

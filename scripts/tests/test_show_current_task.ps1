@@ -99,23 +99,63 @@ if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
     throw "Expected extractor script does not exist: $scriptPath"
 }
 
+$originalStatus = [IO.File]::ReadAllText($statusPath)
+$currentTaskMatch = [regex]::Match(
+    $originalStatus,
+    '(?m)^current_task:\s*(?<id>T\d{2}-\d{2})\s*$'
+)
+if (-not $currentTaskMatch.Success) {
+    throw 'Current status does not contain a valid current_task.'
+}
+$currentTaskId = $currentTaskMatch.Groups['id'].Value
+
 $result = Invoke-Extractor -InputStatusPath $statusPath
 Assert-Equal -Actual $result.ExitCode -Expected 0 -Message 'Default status should be extracted successfully'
-Assert-Contains -Actual $result.Output -Expected 'Current Task: T00-01' -Message 'Output should identify the current Task'
-Assert-Contains -Actual $result.Output -Expected 'Next Gate: T00-04' -Message 'Output should identify the M0 completion Gate'
-Assert-NotContains -Actual $result.Output -Unexpected '### T07-06' -Message 'Output should not include unrelated Task bodies'
+Assert-Contains -Actual $result.Output -Expected "Current Task: $currentTaskId" -Message 'Output should identify the current Task'
+Assert-Contains -Actual $result.Output -Expected 'Next Gate:' -Message 'Output should identify the next Gate'
+$unrelatedTaskId = if ($currentTaskId -eq 'T07-06') { 'T00-01' } else { 'T07-06' }
+Assert-NotContains -Actual $result.Output -Unexpected "### $unrelatedTaskId" -Message 'Output should not include unrelated Task bodies'
 
 $temporaryFiles = [System.Collections.Generic.List[string]]::new()
 
 try {
+    foreach ($fixture in @(
+        @{ TaskId = 'T00-01'; Milestone = 'M0' },
+        @{ TaskId = 'T00-02'; Milestone = 'M0' },
+        @{ TaskId = 'T07-06'; Milestone = 'M7' }
+    )) {
+        $fixtureStatus = [regex]::Replace(
+            $originalStatus,
+            '(?m)^current_task:\s*T\d{2}-\d{2}\s*$',
+            "current_task: $($fixture.TaskId)",
+            1
+        )
+        $fixtureStatus = [regex]::Replace(
+            $fixtureStatus,
+            '(?m)^current_milestone:\s*M\d+\s*$',
+            "current_milestone: $($fixture.Milestone)",
+            1
+        )
+        $fixturePath = New-TemporaryStatus -Content $fixtureStatus
+        $temporaryFiles.Add($fixturePath)
+        $result = Invoke-Extractor -InputStatusPath $fixturePath
+        Assert-Equal -Actual $result.ExitCode -Expected 0 -Message "$($fixture.TaskId) fixture should be extracted successfully"
+        Assert-Contains -Actual $result.Output -Expected "Current Task: $($fixture.TaskId)" -Message "$($fixture.TaskId) fixture should identify its current Task"
+        $fixtureUnrelatedTaskId = if ($fixture.TaskId -eq 'T07-06') { 'T00-01' } else { 'T07-06' }
+        Assert-NotContains -Actual $result.Output -Unexpected "### $fixtureUnrelatedTaskId" -Message "$($fixture.TaskId) fixture should not include unrelated Task bodies"
+    }
+
     $missingPath = Join-Path $PSScriptRoot ("missing-{0}.md" -f [Guid]::NewGuid().ToString('N'))
     $result = Invoke-Extractor -InputStatusPath $missingPath
     Assert-Equal -Actual $result.ExitCode -Expected 1 -Message 'A missing status file should fail'
     Assert-Contains -Actual $result.Output -Expected 'ERROR:' -Message 'A missing status file should report a controlled error'
 
-    $originalStatus = [IO.File]::ReadAllText($statusPath)
-
-    $invalidTaskStatus = $originalStatus.Replace('current_task: T00-01', 'current_task: T99-99')
+    $invalidTaskStatus = [regex]::Replace(
+        $originalStatus,
+        '(?m)^current_task:\s*T\d{2}-\d{2}\s*$',
+        'current_task: T99-99',
+        1
+    )
     $invalidTaskPath = New-TemporaryStatus -Content $invalidTaskStatus
     $temporaryFiles.Add($invalidTaskPath)
     $result = Invoke-Extractor -InputStatusPath $invalidTaskPath

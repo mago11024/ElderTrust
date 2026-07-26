@@ -58,7 +58,7 @@ function Invoke-Validator {
             -RepoRoot $repoRoot `
             -CatalogPath $InputCatalogPath `
             -MainPlanPath $mainPlanPath `
-            -ExpectedTaskCount 65 2>&1
+            -ExpectedTaskCount 66 2>&1
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -110,7 +110,7 @@ try {
     $result = Invoke-Validator -InputCatalogPath $catalogPath
     Assert-Equal -Actual $result.ExitCode -Expected 0 -Message 'The authoritative catalog should pass'
     Assert-Contains -Actual $result.Output -Expected 'Task catalog validation passed' -Message 'The authoritative catalog should report success'
-    Assert-Contains -Actual $result.Output -Expected 'Tasks: 65' -Message 'The authoritative catalog should report all Tasks'
+    Assert-Contains -Actual $result.Output -Expected 'Tasks: 66' -Message 'The authoritative catalog should report all Tasks'
     Assert-Contains -Actual $result.Output -Expected 'Migrations: 12' -Message 'The authoritative catalog should report all migrations'
 
     $duplicateId = [regex]::new('(?m)^### T00-02：').Replace(
