@@ -93,6 +93,14 @@ function Assert-StepAction {
   Assert-Equal -Actual ([string](Get-RequiredProperty -Object $Step -Name 'uses' -Context $Context)) -Expected $ExpectedUse -Message "$Context should use the required action"
 }
 
+function Test-IsEmptyMapping {
+  param(
+    [object]$Value
+  )
+
+  return $null -ne $Value -and -not ($Value -is [string]) -and @($Value.PSObject.Properties).Count -eq 0
+}
+
 if (-not (Test-Path -LiteralPath $workflowPath -PathType Leaf)) {
   Add-Failure -Message "Required CI workflow is missing: $workflowPath"
 }
@@ -151,8 +159,14 @@ print(json.dumps(document))
         Assert-Equal -Actual ([string](Get-RequiredProperty -Object $workflow -Name 'name' -Context 'Workflow')) -Expected 'CI' -Message 'Workflow name'
 
         $triggers = Get-RequiredProperty -Object $workflow -Name 'on' -Context 'Workflow'
+        if ($null -ne $triggers) {
+          $triggerNames = @($triggers.PSObject.Properties | ForEach-Object { $_.Name })
+          if ($triggerNames.Count -ne 2 -or -not ($triggerNames -ccontains 'pull_request') -or -not ($triggerNames -ccontains 'push')) {
+            Add-Failure -Message "Workflow triggers should contain exactly the case-sensitive keys pull_request and push (actual: '$($triggerNames -join ', ')')."
+          }
+        }
         $pullRequest = Get-RequiredProperty -Object $triggers -Name 'pull_request' -Context 'Workflow triggers'
-        if ($null -ne $pullRequest -and -not [string]::IsNullOrEmpty([string]$pullRequest)) {
+        if ($null -ne $pullRequest -and -not [string]::IsNullOrEmpty([string]$pullRequest) -and -not (Test-IsEmptyMapping -Value $pullRequest)) {
           Add-Failure -Message 'pull_request should run for all pull requests without restrictions.'
         }
         $push = Get-RequiredProperty -Object $triggers -Name 'push' -Context 'Workflow triggers'
@@ -176,6 +190,15 @@ print(json.dumps(document))
         $quality = Get-RequiredProperty -Object $jobs -Name 'quality' -Context 'Workflow jobs'
         Assert-Equal -Actual ([string](Get-RequiredProperty -Object $quality -Name 'runs-on' -Context 'quality job')) -Expected 'windows-latest' -Message 'quality job runner'
         Assert-Equal -Actual ([string](Get-RequiredProperty -Object $quality -Name 'timeout-minutes' -Context 'quality job')) -Expected '20' -Message 'quality job timeout'
+
+        $servicesProperty = $quality.PSObject.Properties['services']
+        if ($null -ne $servicesProperty -and $null -ne $servicesProperty.Value) {
+          foreach ($service in $servicesProperty.Value.PSObject.Properties) {
+            if ($service.Name -match '(?i)^(mysql|redis|minio)$') {
+              Add-Failure -Message "quality job must not start the prohibited service '$($service.Name)'."
+            }
+          }
+        }
 
         $steps = @(Get-RequiredProperty -Object $quality -Name 'steps' -Context 'quality job')
         if ($steps.Count -ne 7) {
