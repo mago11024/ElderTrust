@@ -189,8 +189,11 @@ try {
   $result = Invoke-Entrypoint -CommandLogPath (Join-Path $fixtureRoot 'failed-commands.log')
   Assert-True -Condition ($result.ExitCode -ne 0) -Message 'A failing command should fail the entrypoint'
   Assert-Contains -Actual $result.Output -Expected 'backend ruff check' -Message 'Failure output should identify the failing stage'
-  Assert-Contains -Actual $result.Output -Expected '9' -Message 'Failure output should include the command exit code'
-  Assert-True -Condition (@($result.Commands -match '^pnpm\|.*\|typecheck$').Count -eq 0) -Message 'Entrypoint should stop before later frontend checks after a backend failure'
+  Assert-Contains -Actual $result.Output -Expected 'exit code 9' -Message 'Failure output should include the command exit code'
+  Assert-Equal -Actual ($result.Commands -join "`n") -Expected (@(
+      "python|$backendPath|-m ruff format --check .",
+      "python|$backendPath|-m ruff check ."
+    ) -join "`n") -Message 'Entrypoint should stop immediately after the failing backend ruff check'
 
   Remove-Item Env:FAKE_FAIL_RUFF_CHECK -ErrorAction SilentlyContinue
   New-Fixture -WithE2E
