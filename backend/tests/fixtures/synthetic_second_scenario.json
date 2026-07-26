@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "scenario_id": "34f7f084-e4b0-42ea-a81e-cba9ab658ce8",
+  "scenario_version_id": "7c1dd510-8aaf-4e0e-b187-6623fc43464e",
+  "scenario_key": "synthetic_health_offer",
+  "scenario_version": 1,
+  "title": "合成健康产品场景",
+  "runtime_level": "l4",
+  "initial_stage_id": "greeting",
+  "stages": [
+    {
+      "stage_id": "greeting",
+      "order": 1,
+      "title": "陌生问候",
+      "scripted_prompt": "我们正在进行健康产品体验活动。",
+      "ai_strategy": {
+        "mode": "fixed_content",
+        "enabled": false,
+        "allowed_response_intents": ["continue_script"],
+        "prohibited_actions": ["request_real_health_data"]
+      },
+      "risk_points": ["unverified_identity"],
+      "choices": [
+        {
+          "choice_id": "ask_for_credentials",
+          "label": "请先说明机构和资质",
+          "transition": {"target_kind": "stage", "target_id": "offer"},
+          "behavior_mappings": [
+            {
+              "event_type": "seller_credentials_requested",
+              "dimension": "identity_verification",
+              "direction": "positive",
+              "severity": "normal",
+              "opportunity_id": "identity.greeting",
+              "evidence_source": "button_choice",
+              "evidence_summary": "用户要求核实销售方资质"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stage_id": "offer",
+      "order": 2,
+      "title": "产品邀约",
+      "scripted_prompt": "这是固定话术演示，不涉及真实购买。",
+      "ai_strategy": {
+        "mode": "fixed_content",
+        "enabled": false,
+        "allowed_response_intents": ["continue_script"],
+        "prohibited_actions": ["request_real_payment"]
+      },
+      "risk_points": ["unverified_product_claim"],
+      "choices": [
+        {
+          "choice_id": "decline_offer",
+          "label": "我不购买，并结束联系",
+          "transition": {"target_kind": "end", "target_id": "completed_safe"},
+          "behavior_mappings": [
+            {
+              "event_type": "unverified_offer_declined",
+              "dimension": "help_termination",
+              "direction": "positive",
+              "severity": "normal",
+              "opportunity_id": "help.offer",
+              "evidence_source": "button_choice",
+              "evidence_summary": "用户拒绝未经核实的产品邀约"
+            }
+          ]
+        },
+        {
+          "choice_id": "accept_offer",
+          "label": "我继续听取介绍",
+          "transition": {"target_kind": "end", "target_id": "completed_risky"},
+          "behavior_mappings": [
+            {
+              "event_type": "unverified_offer_accepted",
+              "dimension": "help_termination",
+              "direction": "negative",
+              "severity": "normal",
+              "opportunity_id": "help.offer",
+              "evidence_source": "button_choice",
+              "evidence_summary": "用户继续接受未经核实的产品邀约"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "global_safety_choices": [
+    {
+      "choice_id": "end_training",
+      "label": "结束训练",
+      "transition": {"target_kind": "end", "target_id": "safety_stopped"},
+      "end_reason": "user_ended",
+      "control_events": [
+        {
+          "event_type": "training_ended_by_user",
+          "evidence_source": "safety_control",
+          "scoring_eligible": false,
+          "evidence_summary": "用户主动结束训练"
+        }
+      ]
+    }
+  ],
+  "end_conditions": [
+    {
+      "end_state": "completed_safe",
+      "condition_type": "normal_completion",
+      "triggering_event_types": []
+    },
+    {
+      "end_state": "completed_risky",
+      "condition_type": "risk_override",
+      "triggering_event_types": ["unverified_offer_accepted"]
+    },
+    {
+      "end_state": "safety_stopped",
+      "condition_type": "safety_stop",
+      "triggering_event_types": ["training_ended_by_user"]
+    }
+  ],
+  "content_safety": {
+    "forbidden_content": ["真实健康数据", "真实付款信息"],
+    "sensitive_data_rules": ["不要求输入健康档案", "不要求输入银行卡号"],
+    "max_pressure_prompts": 1,
+    "suspected_real_fraud_guidance": ["停止付款", "通过独立官方渠道核实"],
+    "external_action_policy": {
+      "automatic_alarm": false,
+      "automatic_fund_freeze": false,
+      "automatic_family_contact": false
+    }
+  },
+  "fallback": {
+    "interaction_mode": "text_buttons",
+    "ai_enabled": false,
+    "evaluation_mode": "deterministic_rules",
+    "fixed_content": "使用固定话术和按钮完成合成训练。"
+  },
+  "scoring_policy": {
+    "positive_opportunity_score": 100,
+    "negative_opportunity_score": 0,
+    "severe_negative_dimension_cap": 20,
+    "rounding": "half_up_integer",
+    "dimensions": [
+      {
+        "dimension": "identity_verification",
+        "opportunity_ids": ["identity.greeting"],
+        "weight": 50
+      },
+      {
+        "dimension": "help_termination",
+        "opportunity_ids": ["help.offer"],
+        "weight": 50
+      }
+    ]
+  }
+}

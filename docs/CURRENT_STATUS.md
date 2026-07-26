@@ -4,17 +4,17 @@
 schema_version: 1
 current_milestone: M1
 milestone_status: active
-current_task: T01-04
+current_task: T01-05
 status: completed
-last_completed_task: T01-04
-next_task: T01-05
+last_completed_task: T01-05
+next_task: T01-06
 task_catalog: docs/superpowers/plans/2026-07-23-complete-project-task-catalog.md
 blockers: []
 active_regression: null
 suspended_task: null
 gate_reverification_required: false
 last_verification:
-  command: scripts/test.ps1 + T01-04 focused acceptance
+  command: scripts/test.ps1 + T01-05 focused acceptance
   result: passed
   verified_at: 2026-07-26
 updated_at: 2026-07-26
