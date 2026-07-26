@@ -22,7 +22,7 @@ function Assert-Equal {
     [string]$Message
   )
 
-  if ($Actual -ne $Expected) {
+  if ($Actual -cne $Expected) {
     $failures.Add("$Message (expected: '$Expected'; actual: '$Actual')")
   }
 }
@@ -87,7 +87,8 @@ function Write-FixtureFile {
 
 function New-Fixture {
   param(
-    [switch]$WithE2E
+    [AllowEmptyString()]
+    [string]$E2EScriptName
   )
 
   if (Test-Path -LiteralPath $fixtureRoot) {
@@ -98,7 +99,7 @@ function New-Fixture {
   }
 
   New-Item -ItemType Directory -Force -Path (Join-Path $fixtureRoot 'backend'), (Join-Path $fixtureRoot 'frontend'), (Join-Path $fixtureRoot 'shims') | Out-Null
-  $scripts = if ($WithE2E) { '"scripts":{"test:e2e":"playwright test"}' } else { '"scripts":{}' }
+  $scripts = if ([string]::IsNullOrEmpty($E2EScriptName)) { '"scripts":{}' } else { '"scripts":{"' + $E2EScriptName + '":"playwright test"}' }
   Write-FixtureFile -RelativePath 'frontend\package.json' -Content ("{{{0}}}" -f $scripts)
   Write-FixtureFile -RelativePath 'shims\log-command.ps1' -Content @'
 param(
@@ -131,7 +132,9 @@ exit /b %ERRORLEVEL%
 function Invoke-Entrypoint {
   param(
     [Parameter(Mandatory)]
-    [string]$CommandLogPath
+    [string]$CommandLogPath,
+
+    [switch]$ShadowPython
   )
 
   $env:COMMAND_LOG = $CommandLogPath
@@ -139,7 +142,30 @@ function Invoke-Entrypoint {
   try {
     $ErrorActionPreference = 'Continue'
     Push-Location -LiteralPath $temporaryBase
-    $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $entrypointPath -RepoRoot $fixtureRoot 2>&1
+    if ($ShadowPython) {
+      Write-FixtureFile -RelativePath 'shims\invoke-with-python-shadow.ps1' -Content @'
+param(
+  [Parameter(Mandatory)]
+  [string]$EntrypointPath,
+
+  [Parameter(Mandatory)]
+  [string]$RepoRoot
+)
+
+function python {
+  throw 'The shadow python function should not be selected.'
+}
+
+Set-Alias -Name python -Value Write-Output
+& $EntrypointPath -RepoRoot $RepoRoot
+exit $LASTEXITCODE
+'@
+      $shadowWrapperPath = Join-Path $fixtureRoot 'shims\invoke-with-python-shadow.ps1'
+      $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $shadowWrapperPath -EntrypointPath $entrypointPath -RepoRoot $fixtureRoot 2>&1
+    }
+    else {
+      $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $entrypointPath -RepoRoot $fixtureRoot 2>&1
+    }
     $exitCode = $LASTEXITCODE
   }
   finally {
@@ -196,12 +222,25 @@ try {
     ) -join "`n") -Message 'Entrypoint should stop immediately after the failing backend ruff check'
 
   Remove-Item Env:FAKE_FAIL_RUFF_CHECK -ErrorAction SilentlyContinue
-  New-Fixture -WithE2E
+  New-Fixture -E2EScriptName 'test:e2e'
   $env:PATH = "$(Join-Path $fixtureRoot 'shims');$originalPath"
   $result = Invoke-Entrypoint -CommandLogPath (Join-Path $fixtureRoot 'e2e-commands.log')
   Assert-Equal -Actual $result.ExitCode -Expected 0 -Message 'An E2E fixture should pass with successful command shims'
-  Assert-True -Condition (@($result.Commands -match '^pnpm\|.*\|test:e2e$').Count -eq 1) -Message 'Exact package test:e2e script should run pnpm test:e2e'
+  Assert-True -Condition (@($result.Commands -cmatch '^pnpm\|.*\|test:e2e$').Count -eq 1) -Message 'Exact package test:e2e script should run pnpm test:e2e'
   Assert-True -Condition (-not $result.Output.Contains('SKIP: frontend test:e2e is reserved for T01-13.')) -Message 'Configured E2E stage should not be skipped'
+
+  New-Fixture -E2EScriptName 'TEST:E2E'
+  $env:PATH = "$(Join-Path $fixtureRoot 'shims');$originalPath"
+  $result = Invoke-Entrypoint -CommandLogPath (Join-Path $fixtureRoot 'uppercase-e2e-commands.log')
+  Assert-Equal -Actual $result.ExitCode -Expected 0 -Message 'An uppercase E2E property fixture should pass with successful command shims'
+  Assert-Contains -Actual $result.Output -Expected 'SKIP: frontend test:e2e is reserved for T01-13.' -Message 'Only the exact test:e2e property should enable the E2E stage'
+  Assert-True -Condition (@($result.Commands -cmatch '^pnpm\|.*\|test:e2e$').Count -eq 0) -Message 'An uppercase E2E property should not run pnpm test:e2e'
+
+  New-Fixture
+  $env:PATH = "$(Join-Path $fixtureRoot 'shims');$originalPath"
+  $result = Invoke-Entrypoint -CommandLogPath (Join-Path $fixtureRoot 'shadowed-python-commands.log') -ShadowPython
+  Assert-Equal -Actual $result.ExitCode -Expected 0 -Message 'A python function or alias shadow should not replace the application shim'
+  Assert-True -Condition (@($result.Commands -cmatch '^python\|.*\|-m ruff format --check \.$').Count -eq 1) -Message 'The resolved python application shim should run despite python function and alias shadows'
 }
 finally {
   $env:PATH = $originalPath

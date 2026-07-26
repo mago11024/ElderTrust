@@ -42,15 +42,23 @@ function Resolve-RequiredFile {
   return (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
 }
 
-function Assert-RequiredCommand {
+function Resolve-RequiredApplication {
   param(
     [Parameter(Mandatory)]
     [string]$Name
   )
 
-  if ($null -eq (Get-Command -Name $Name -ErrorAction SilentlyContinue)) {
-    throw "Required command '$Name' was not found on PATH."
+  $application = Get-Command -Name $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($null -eq $application) {
+    throw "Required application '$Name' was not found on PATH."
   }
+
+  $applicationPath = if ([string]::IsNullOrWhiteSpace($application.Path)) { $application.Source } else { $application.Path }
+  if ([string]::IsNullOrWhiteSpace($applicationPath) -or -not (Test-Path -LiteralPath $applicationPath -PathType Leaf)) {
+    throw "Required application '$Name' did not resolve to an executable file."
+  }
+
+  return (Resolve-Path -LiteralPath $applicationPath -ErrorAction Stop).Path
 }
 
 function Invoke-CheckedCommand {
@@ -69,6 +77,7 @@ function Invoke-CheckedCommand {
   )
 
   Write-Output "RUN: $StageName"
+  $exitCode = $null
   Push-Location -LiteralPath $WorkingDirectory
   try {
     & $Executable @Arguments
@@ -88,29 +97,38 @@ $backendPath = Resolve-RequiredDirectory -Path (Join-Path $repoRoot 'backend') -
 $frontendPath = Resolve-RequiredDirectory -Path (Join-Path $repoRoot 'frontend') -Name 'frontend'
 $packageJsonPath = Resolve-RequiredFile -Path (Join-Path $frontendPath 'package.json') -Name 'frontend package.json'
 
-Assert-RequiredCommand -Name 'python'
-Assert-RequiredCommand -Name 'pnpm'
+$pythonExecutable = Resolve-RequiredApplication -Name 'python'
+$pnpmExecutable = Resolve-RequiredApplication -Name 'pnpm'
+$powershellExecutable = Resolve-RequiredApplication -Name 'powershell.exe'
 
 $repositoryTestsPath = Join-Path $repoRoot 'scripts\tests'
 if (Test-Path -LiteralPath $repositoryTestsPath -PathType Container) {
   $repositoryTests = Get-ChildItem -LiteralPath $repositoryTestsPath -File -Filter 'test_*.ps1' | Sort-Object -Property Name
   foreach ($repositoryTest in $repositoryTests) {
-    Invoke-CheckedCommand -StageName "repository PowerShell test $($repositoryTest.Name)" -WorkingDirectory $repoRoot -Executable 'powershell.exe' -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $repositoryTest.FullName)
+    Invoke-CheckedCommand -StageName "repository PowerShell test $($repositoryTest.Name)" -WorkingDirectory $repoRoot -Executable $powershellExecutable -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $repositoryTest.FullName)
   }
 }
 
-Invoke-CheckedCommand -StageName 'backend ruff format check' -WorkingDirectory $backendPath -Executable 'python' -Arguments @('-m', 'ruff', 'format', '--check', '.')
-Invoke-CheckedCommand -StageName 'backend ruff check' -WorkingDirectory $backendPath -Executable 'python' -Arguments @('-m', 'ruff', 'check', '.')
-Invoke-CheckedCommand -StageName 'backend mypy' -WorkingDirectory $backendPath -Executable 'python' -Arguments @('-m', 'mypy')
-Invoke-CheckedCommand -StageName 'backend pytest' -WorkingDirectory $backendPath -Executable 'python' -Arguments @('-m', 'pytest')
-Invoke-CheckedCommand -StageName 'frontend test' -WorkingDirectory $frontendPath -Executable 'pnpm' -Arguments @('test', '--run')
-Invoke-CheckedCommand -StageName 'frontend typecheck' -WorkingDirectory $frontendPath -Executable 'pnpm' -Arguments @('typecheck')
+Invoke-CheckedCommand -StageName 'backend ruff format check' -WorkingDirectory $backendPath -Executable $pythonExecutable -Arguments @('-m', 'ruff', 'format', '--check', '.')
+Invoke-CheckedCommand -StageName 'backend ruff check' -WorkingDirectory $backendPath -Executable $pythonExecutable -Arguments @('-m', 'ruff', 'check', '.')
+Invoke-CheckedCommand -StageName 'backend mypy' -WorkingDirectory $backendPath -Executable $pythonExecutable -Arguments @('-m', 'mypy')
+Invoke-CheckedCommand -StageName 'backend pytest' -WorkingDirectory $backendPath -Executable $pythonExecutable -Arguments @('-m', 'pytest')
+Invoke-CheckedCommand -StageName 'frontend test' -WorkingDirectory $frontendPath -Executable $pnpmExecutable -Arguments @('test', '--run')
+Invoke-CheckedCommand -StageName 'frontend typecheck' -WorkingDirectory $frontendPath -Executable $pnpmExecutable -Arguments @('typecheck')
 
 $packageJson = Get-Content -LiteralPath $packageJsonPath -Raw | ConvertFrom-Json -ErrorAction Stop
 $scriptsProperty = $packageJson.psobject.Properties['scripts']
-$e2eProperty = if ($null -eq $scriptsProperty -or $null -eq $scriptsProperty.Value) { $null } else { $scriptsProperty.Value.psobject.Properties['test:e2e'] }
+$e2eProperty = $null
+if ($null -ne $scriptsProperty -and $null -ne $scriptsProperty.Value) {
+  foreach ($property in $scriptsProperty.Value.psobject.Properties) {
+    if ($property.Name -ceq 'test:e2e') {
+      $e2eProperty = $property
+      break
+    }
+  }
+}
 if ($null -ne $e2eProperty) {
-  Invoke-CheckedCommand -StageName 'frontend test:e2e' -WorkingDirectory $frontendPath -Executable 'pnpm' -Arguments @('test:e2e')
+  Invoke-CheckedCommand -StageName 'frontend test:e2e' -WorkingDirectory $frontendPath -Executable $pnpmExecutable -Arguments @('test:e2e')
 }
 else {
   Write-Output 'SKIP: frontend test:e2e is reserved for T01-13.'
