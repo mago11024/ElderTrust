@@ -233,6 +233,25 @@ def test_same_request_and_command_replays_receipt_without_advancing() -> None:
     assert len(replay.state.events) == 1
 
 
+def test_same_request_replays_original_end_receipt_after_training_has_ended() -> None:
+    config = load_customer_refund_config()
+    initial = start_training(config)
+    end_command = command(
+        config,
+        initial,
+        "end_training",
+        request_id="replayed-end-request",
+    )
+    first = apply_selection(config, initial, end_command)
+
+    replay = apply_selection(config, first.state, end_command)
+
+    assert replay.idempotent_replay
+    assert replay.state == first.state
+    assert replay.receipt == first.receipt
+    assert replay.emitted_events == ()
+
+
 def test_same_request_with_different_command_is_a_conflict() -> None:
     config = load_customer_refund_config()
     initial = start_training(config)
@@ -257,6 +276,62 @@ def test_same_request_with_different_command_is_a_conflict() -> None:
         apply_selection(config, first.state, conflicting)
 
     assert len(first.state.events) == 1
+
+
+def test_request_conflict_precedes_version_stage_and_ended_checks() -> None:
+    config = load_customer_refund_config()
+    initial = start_training(config)
+    first = apply_selection(
+        config,
+        initial,
+        command(
+            config,
+            initial,
+            "end_training",
+            request_id="precedence-conflict",
+        ),
+    )
+    conflicting = SelectionCommand(
+        request_id="precedence-conflict",
+        scenario_version_id=uuid4(),
+        stage_id="wrong_stage",
+        choice_id="missing_choice",
+    )
+
+    with pytest.raises(RequestConflictError, match="request ID"):
+        apply_selection(config, first.state, conflicting)
+
+
+def test_end_training_precedes_maximum_normal_round_limit() -> None:
+    config = load_customer_refund_config()
+    exhausted_but_active = replace(
+        start_training(config),
+        normal_round_count=len(config.stages),
+    )
+
+    result = apply_selection(
+        config,
+        exhausted_but_active,
+        command(config, exhausted_but_active, "end_training"),
+    )
+
+    assert result.state.end_state == EndState.SAFETY_STOPPED
+    assert result.state.end_reason == "user_ended"
+    assert result.state.normal_round_count == len(config.stages)
+    assert [event.event_type for event in result.emitted_events] == ["training_ended_by_user"]
+
+
+def test_config_version_must_match_state_locked_version() -> None:
+    config = load_customer_refund_config()
+    state = start_training(config)
+    mismatched_config = config.model_copy(update={"scenario_version_id": uuid4()})
+
+    with pytest.raises(ScenarioVersionMismatchError, match="scenario version"):
+        apply_selection(
+            mismatched_config,
+            state,
+            command(config, state, "end_training"),
+        )
 
 
 def test_unknown_choice_and_wrong_stage_are_distinct_errors() -> None:
