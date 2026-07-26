@@ -57,7 +57,7 @@ function ConvertTo-WindowsArgument {
     return $Argument
   }
 
-  $escaped = [regex]::Replace($Argument, '(\\*)"', '$1$1\\"')
+  $escaped = [regex]::Replace($Argument, '(\\*)"', '$1$1\"')
   $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
   return '"{0}"' -f $escaped
 }
@@ -164,9 +164,11 @@ function Stop-ManagedApplication {
     return
   }
 
+  # Retain this object and its process handle; never re-resolve its PID.
+  $processHandle = $Process
   try {
-    $Process.Refresh()
-    if ($Process.HasExited) {
+    $processHandle.Refresh()
+    if ($processHandle.HasExited) {
       return
     }
   }
@@ -174,12 +176,13 @@ function Stop-ManagedApplication {
     return
   }
 
-  Write-Host "CLEANUP: stopping $Name process tree (PID $($Process.Id))."
+  Write-Host "CLEANUP: stopping $Name process tree (PID $($processHandle.Id))."
   $taskkillExitCode = $null
+  $taskkillFailure = $null
   try {
     $taskkillStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $taskkillStartInfo.FileName = $TaskkillExecutable
-    $taskkillStartInfo.Arguments = "/PID $($Process.Id) /T /F"
+    $taskkillStartInfo.Arguments = "/PID $($processHandle.Id) /T /F"
     $taskkillStartInfo.UseShellExecute = $false
     $taskkillStartInfo.CreateNoWindow = $true
     $taskkillProcess = [System.Diagnostics.Process]::Start($taskkillStartInfo)
@@ -188,25 +191,32 @@ function Stop-ManagedApplication {
     }
     else {
       Stop-Process -Id $taskkillProcess.Id -Force -ErrorAction SilentlyContinue
+      $taskkillFailure = 'timed out after two seconds'
     }
   }
   catch {
-    $taskkillExitCode = $null
+    $taskkillFailure = $_.Exception.Message
   }
 
   if ($taskkillExitCode -eq 0) {
     return
   }
 
+  if ($null -eq $taskkillFailure) {
+    $taskkillFailure = "exited with code $taskkillExitCode"
+  }
+
   try {
-    $Process.Refresh()
-    if (-not $Process.HasExited) {
-      Stop-Process -Id $Process.Id -Force -ErrorAction Stop
+    $processHandle.Refresh()
+    if (-not $processHandle.HasExited) {
+      Stop-Process -InputObject $processHandle -Force -ErrorAction Stop
     }
   }
   catch {
-    Write-Warning "Unable to stop $Name process (PID $($Process.Id)): $($_.Exception.Message)"
+    $taskkillFailure = "$taskkillFailure; exact-root fallback failed: $($_.Exception.Message)"
   }
+
+  return "Unconfirmed process-tree cleanup for $Name (PID $($processHandle.Id)): taskkill $taskkillFailure."
 }
 
 function Wait-ForManagedApplications {
@@ -232,6 +242,10 @@ function Wait-ForManagedApplications {
   }
 }
 
+if ($MyInvocation.InvocationName -eq '.') {
+  return
+}
+
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
   $RepoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 }
@@ -240,6 +254,8 @@ $originalLocation = Get-Location
 $backendProcess = $null
 $frontendProcess = $null
 $taskkillExecutable = $null
+$launcherFailure = $null
+$cleanupFailures = [System.Collections.Generic.List[string]]::new()
 
 try {
   $repoRoot = Resolve-RequiredDirectory -Path ([IO.Path]::GetFullPath($RepoRoot)) -Name 'repository root'
@@ -257,10 +273,30 @@ try {
   $frontendProcess = Start-ManagedApplication -Name 'frontend' -WorkingDirectory $frontendPath -Executable $pnpmExecutable -CommandHostExecutable $commandHostExecutable -Arguments @('dev')
   Wait-ForManagedApplications -BackendProcess $backendProcess -FrontendProcess $frontendProcess
 }
+catch {
+  $launcherFailure = $_
+}
 finally {
   if ($null -ne $taskkillExecutable) {
-    Stop-ManagedApplication -Process $frontendProcess -Name 'frontend' -TaskkillExecutable $taskkillExecutable
-    Stop-ManagedApplication -Process $backendProcess -Name 'backend' -TaskkillExecutable $taskkillExecutable
+    foreach ($cleanupResult in @(
+        Stop-ManagedApplication -Process $frontendProcess -Name 'frontend' -TaskkillExecutable $taskkillExecutable
+        Stop-ManagedApplication -Process $backendProcess -Name 'backend' -TaskkillExecutable $taskkillExecutable
+      )) {
+      if ($null -ne $cleanupResult) {
+        $cleanupFailures.Add($cleanupResult)
+      }
+    }
   }
   Set-Location -LiteralPath $originalLocation.Path
+}
+
+if ($null -ne $launcherFailure) {
+  if ($cleanupFailures.Count -gt 0) {
+    throw "$($launcherFailure.Exception.Message) Cleanup failures: $($cleanupFailures -join ' ')"
+  }
+  throw $launcherFailure
+}
+
+if ($cleanupFailures.Count -gt 0) {
+  throw "Cleanup failures: $($cleanupFailures -join ' ')"
 }

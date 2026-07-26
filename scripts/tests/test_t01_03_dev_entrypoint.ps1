@@ -9,6 +9,7 @@ $entrypointPath = Join-Path $repoRoot 'scripts\dev.ps1'
 $temporaryBase = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $fixtureRoot = Join-Path $temporaryBase ("t01 03 & 安信 {0}" -f [Guid]::NewGuid().ToString('N'))
 $failures = [System.Collections.Generic.List[string]]::new()
+$testStopwatch = [Diagnostics.Stopwatch]::StartNew()
 
 function Assert-Equal {
   param(
@@ -125,7 +126,7 @@ if ($Name -eq 'python') {
 }
 
 if ($Name -eq 'pnpm') {
-  $child = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 10') -PassThru
+  $child = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -PassThru
   [IO.File]::WriteAllText($env:DESCENDANT_PID_PATH, $child.Id.ToString(), [Text.UTF8Encoding]::new($false))
   Wait-Process -Id $child.Id
 }
@@ -140,6 +141,15 @@ exit /b %ERRORLEVEL%
   Write-FixtureFile -RelativePath 'shims\docker.cmd' -Content $shim.Replace('__NAME__', 'docker')
   Write-FixtureFile -RelativePath 'shims\python.cmd' -Content $shim.Replace('__NAME__', 'python')
   Write-FixtureFile -RelativePath 'shims\pnpm.cmd' -Content $shim.Replace('__NAME__', 'pnpm')
+  Write-FixtureFile -RelativePath 'shims\argv-probe.ps1' -Content @'
+param(
+  [Parameter(ValueFromRemainingArguments = $true)]
+  [string[]]$CommandArguments
+)
+
+$encodedArguments = $CommandArguments | ForEach-Object { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($_)) }
+[IO.File]::WriteAllLines($env:ARGV_LOG, $encodedArguments, [Text.UTF8Encoding]::new($false))
+'@
 }
 
 function Invoke-Entrypoint {
@@ -153,28 +163,35 @@ function Invoke-Entrypoint {
   $env:COMMAND_LOG = $CommandLogPath
   $env:DESCENDANT_PID_PATH = Join-Path $fixtureRoot 'descendant.pid'
   $env:BACKEND_READY_PATH = Join-Path $fixtureRoot 'backend.ready'
-  if ($ShadowApplications) {
-    $wrapperPath = Join-Path $fixtureRoot 'shims\invoke-with-shadows.ps1'
-    Write-FixtureFile -RelativePath 'shims\invoke-with-shadows.ps1' -Content @'
+  $resultPath = Join-Path $fixtureRoot 'launcher-result.txt'
+  Write-FixtureFile -RelativePath 'shims\invoke-launcher.ps1' -Content @'
 param(
   [Parameter(Mandatory)]
   [string]$EntrypointPath,
 
   [Parameter(Mandatory)]
-  [string]$RepoRoot
+  [string]$RepoRoot,
+
+  [Parameter(Mandatory)]
+  [string]$ResultPath
 )
 
 function docker { throw 'The docker function should not be selected.' }
 function python { throw 'The python function should not be selected.' }
 Set-Alias -Name pnpm -Value Write-Output
-& $EntrypointPath -RepoRoot $RepoRoot
-exit $LASTEXITCODE
+try {
+  & $EntrypointPath -RepoRoot $RepoRoot
+  $exitCode = $LASTEXITCODE
+  [IO.File]::WriteAllText($ResultPath, '', [Text.UTF8Encoding]::new($false))
+}
+catch {
+  $exitCode = 1
+  [IO.File]::WriteAllText($ResultPath, $_.Exception.Message, [Text.UTF8Encoding]::new($false))
+}
+exit $exitCode
 '@
-    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath, '-EntrypointPath', $entrypointPath, '-RepoRoot', $fixtureRoot)
-  }
-  else {
-    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $entrypointPath, '-RepoRoot', $fixtureRoot)
-  }
+  $wrapperPath = Join-Path $fixtureRoot 'shims\invoke-launcher.ps1'
+  $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath, '-EntrypointPath', $entrypointPath, '-RepoRoot', $fixtureRoot, '-ResultPath', $resultPath)
 
   $powershellPath = (Get-Command -Name powershell.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Path
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -182,22 +199,22 @@ exit $LASTEXITCODE
   $startInfo.Arguments = (($arguments | ForEach-Object { '"{0}"' -f $_.Replace('"', '\\"') }) -join ' ')
   $startInfo.UseShellExecute = $false
   $startInfo.CreateNoWindow = $true
-  $startInfo.RedirectStandardOutput = $true
-  $startInfo.RedirectStandardError = $true
   $process = [System.Diagnostics.Process]::Start($startInfo)
-  $timedOut = -not $process.WaitForExit(15000)
+  $launcherStopwatch = [Diagnostics.Stopwatch]::StartNew()
+  $timedOut = -not $process.WaitForExit(8000)
   if ($timedOut) {
     & taskkill.exe /PID $process.Id /T /F | Out-Null
     $null = $process.WaitForExit(3000)
   }
 
-  $output = $process.StandardOutput.ReadToEnd() + $process.StandardError.ReadToEnd()
   $exitCode = if ($process.HasExited) { $process.ExitCode } else { -1 }
+  $launcherStopwatch.Stop()
 
   return @{
     ExitCode = $exitCode
-    Output = ($output | Out-String)
+    Output = if (Test-Path -LiteralPath $resultPath -PathType Leaf) { [IO.File]::ReadAllText($resultPath) } else { '' }
     TimedOut = $timedOut
+    ElapsedMilliseconds = $launcherStopwatch.ElapsedMilliseconds
     Commands = if (Test-Path -LiteralPath $CommandLogPath) { [IO.File]::ReadAllLines($CommandLogPath) } else { @() }
   }
 }
@@ -218,6 +235,35 @@ function Test-ProcessHasExited {
   return $false
 }
 
+function Invoke-WindowsArgumentProbe {
+  param(
+    [string]$ArgumentLine,
+
+    [Parameter(Mandatory)]
+    [string]$CommandLogPath
+  )
+
+  . $entrypointPath
+  $probePath = Join-Path $fixtureRoot 'shims\argv-probe.ps1'
+  $powershellPath = (Get-Command -Name powershell.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Path
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = $powershellPath
+  $startInfo.Arguments = (Join-WindowsArguments -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $probePath)) + ' ' + $ArgumentLine
+  $startInfo.WorkingDirectory = $fixtureRoot
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+  if (-not $process.WaitForExit(3000)) {
+    Stop-Process -InputObject $process -Force -ErrorAction SilentlyContinue
+    throw 'Windows argument probe exceeded its three-second deadline.'
+  }
+
+  if (Test-Path -LiteralPath $CommandLogPath -PathType Leaf) {
+    return [IO.File]::ReadAllLines($CommandLogPath)
+  }
+  throw "Windows argument probe produced no log (exit code $($process.ExitCode))."
+}
+
 if (-not (Test-Path -LiteralPath $entrypointPath -PathType Leaf)) {
   throw "Expected unified development entrypoint script is missing: $entrypointPath"
 }
@@ -227,9 +273,32 @@ $originalCommandLog = $env:COMMAND_LOG
 $originalDockerExitCode = $env:FAKE_DOCKER_EXIT_CODE
 $originalDescendantPidPath = $env:DESCENDANT_PID_PATH
 $originalBackendReadyPath = $env:BACKEND_READY_PATH
+$originalArgvLog = $env:ARGV_LOG
+$sentinelProcess = $null
 
 try {
+  $powershellPath = (Get-Command -Name powershell.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Path
+  $sentinelStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $sentinelStartInfo.FileName = $powershellPath
+  $sentinelStartInfo.Arguments = '-NoProfile -Command "Start-Sleep -Seconds 60"'
+  $sentinelStartInfo.UseShellExecute = $false
+  $sentinelStartInfo.CreateNoWindow = $true
+  $sentinelProcess = [System.Diagnostics.Process]::Start($sentinelStartInfo)
+
   New-Fixture
+  $argumentProbeLogPath = Join-Path $fixtureRoot 'argv.log'
+  $env:ARGV_LOG = $argumentProbeLogPath
+  . $entrypointPath
+  $roundTripLine = @(
+      (ConvertTo-WindowsArgument -Argument ''),
+      (ConvertTo-WindowsArgument -Argument 'space value'),
+      (ConvertTo-WindowsArgument -Argument 'quote"inside'),
+      (ConvertTo-WindowsArgument -Argument 'trailing\'),
+      (ConvertTo-WindowsArgument -Argument 'plain')
+    ) -join ' '
+  $argumentProbeOutput = Invoke-WindowsArgumentProbe -ArgumentLine $roundTripLine -CommandLogPath $argumentProbeLogPath
+  Assert-Equal -Actual ($argumentProbeOutput -join "`n") -Expected ((@('', 'space value', 'quote"inside', 'trailing\', 'plain') | ForEach-Object { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($_)) }) -join "`n") -Message 'Windows argument probe should preserve empty, spaced, quoted, trailing-backslash, and plain arguments'
+
   $env:PATH = "$(Join-Path $fixtureRoot 'shims');$originalPath"
   $env:FAKE_DOCKER_EXIT_CODE = '0'
   $commandLogPath = Join-Path $fixtureRoot 'commands.log'
@@ -239,6 +308,7 @@ try {
 
   Assert-True -Condition ($result.ExitCode -ne 0) -Message 'An application exit should fail the development launcher'
   Assert-True -Condition (-not $result.TimedOut) -Message 'Launcher should clean up and exit before the bounded fixture timeout'
+  Assert-True -Condition ($result.ElapsedMilliseconds -lt 8000) -Message 'Launcher should clean up the descendant well before its 30-second natural exit'
   Assert-Contains -Actual $result.Output -Expected 'Unexpected backend process exit' -Message 'Launcher should identify the unexpectedly exited backend'
   Assert-Equal -Actual ($result.Commands -join "`n") -Expected (@(
       "docker|$fixtureRoot|compose up -d --wait mysql",
@@ -251,6 +321,8 @@ try {
     $descendantId = [int][IO.File]::ReadAllText($env:DESCENDANT_PID_PATH)
     Assert-True -Condition (Test-ProcessHasExited -Id $descendantId) -Message 'Launcher cleanup should terminate the frontend process tree it created'
   }
+  $sentinelProcess.Refresh()
+  Assert-True -Condition (-not $sentinelProcess.HasExited) -Message 'Launcher cleanup must not terminate an unrelated sentinel process'
 
   New-Fixture
   $env:PATH = "$(Join-Path $fixtureRoot 'shims');$originalPath"
@@ -260,14 +332,27 @@ try {
   Assert-True -Condition (-not $result.TimedOut) -Message 'Docker failure should exit before the bounded fixture timeout'
   Assert-Contains -Actual $result.Output -Expected 'Docker compose up failed with exit code 37' -Message 'Docker failure should report its exit code'
   Assert-Equal -Actual ($result.Commands -join "`n") -Expected "docker|$fixtureRoot|compose up -d --wait mysql" -Message 'Docker failure must prevent application startup'
+  Assert-True -Condition ($testStopwatch.ElapsedMilliseconds -lt 15000) -Message 'Behavior test must complete within its wall-clock deadline'
 }
 finally {
+  if ($null -ne $sentinelProcess) {
+    try {
+      $sentinelProcess.Refresh()
+      if (-not $sentinelProcess.HasExited) {
+        Stop-Process -InputObject $sentinelProcess -Force -ErrorAction Stop
+      }
+    }
+    catch {
+      Write-Warning "Unable to stop sentinel process: $($_.Exception.Message)"
+    }
+  }
   $env:PATH = $originalPath
   foreach ($environmentVariable in @(
       @{ Name = 'COMMAND_LOG'; Value = $originalCommandLog },
       @{ Name = 'FAKE_DOCKER_EXIT_CODE'; Value = $originalDockerExitCode },
       @{ Name = 'DESCENDANT_PID_PATH'; Value = $originalDescendantPidPath },
-      @{ Name = 'BACKEND_READY_PATH'; Value = $originalBackendReadyPath }
+      @{ Name = 'BACKEND_READY_PATH'; Value = $originalBackendReadyPath },
+      @{ Name = 'ARGV_LOG'; Value = $originalArgvLog }
     )) {
     if ($null -eq $environmentVariable.Value) {
       Remove-Item "Env:$($environmentVariable.Name)" -ErrorAction SilentlyContinue
