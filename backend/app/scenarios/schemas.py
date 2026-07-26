@@ -3,16 +3,15 @@
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
-from uuid import UUID
 
 from pydantic import (
     UUID4,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     PositiveInt,
     StringConstraints,
-    field_validator,
 )
 
 NonEmptyString = Annotated[str, StringConstraints(min_length=1)]
@@ -22,8 +21,20 @@ OpportunityIdentifier = Annotated[
 ]
 Percentage = Annotated[PositiveInt, Field(le=100)]
 
-SCENARIO_ID = UUID("7bea2c71-9bbb-4a38-bf53-a89b56635cbb")
-SCENARIO_VERSION_ID = UUID("991f3f54-79d7-4b0e-b2b0-a8f22f3d327c")
+
+def validate_canonical_uuid4_text(value: object) -> object:
+    """Require lowercase, hyphenated UUID-v4 JSON text before UUID parsing."""
+
+    if not isinstance(value, str) or len(value) != 36:
+        raise ValueError("UUID v4 must use lowercase hyphenated JSON text")
+    if value[8] != "-" or value[13] != "-" or value[18] != "-" or value[23] != "-":
+        raise ValueError("UUID v4 must use lowercase hyphenated JSON text")
+    if value != value.lower():
+        raise ValueError("UUID v4 must use lowercase hyphenated JSON text")
+    return value
+
+
+CanonicalUUID4 = Annotated[UUID4, BeforeValidator(validate_canonical_uuid4_text)]
 
 
 class ConfigModel(BaseModel):
@@ -78,7 +89,6 @@ class Transition(ConfigModel):
 
 
 class BehaviorMapping(ConfigModel):
-    event_id: UUID4
     event_type: StableIdentifier
     dimension: Dimension
     direction: Direction
@@ -170,10 +180,10 @@ class ScoringPolicyConfig(ConfigModel):
 
 class ScenarioConfig(ConfigModel):
     schema_version: PositiveInt
-    scenario_id: UUID4
-    scenario_version_id: UUID4
-    scenario_key: Literal["customer_refund"]
-    scenario_version: Literal[1]
+    scenario_id: CanonicalUUID4
+    scenario_version_id: CanonicalUUID4
+    scenario_key: StableIdentifier
+    scenario_version: PositiveInt
     title: NonEmptyString
     runtime_level: Literal["l4"]
     initial_stage_id: StableIdentifier
@@ -183,20 +193,6 @@ class ScenarioConfig(ConfigModel):
     content_safety: ContentSafetyConfig
     fallback: FallbackConfig
     scoring_policy: ScoringPolicyConfig
-
-    @field_validator("scenario_id")
-    @classmethod
-    def validate_scenario_id(cls, value: UUID4) -> UUID4:
-        if value != SCENARIO_ID:
-            raise ValueError("scenario_id must be the fixed customer_refund identifier")
-        return value
-
-    @field_validator("scenario_version_id")
-    @classmethod
-    def validate_scenario_version_id(cls, value: UUID4) -> UUID4:
-        if value != SCENARIO_VERSION_ID:
-            raise ValueError("scenario_version_id must be the fixed customer_refund V1 identifier")
-        return value
 
 
 def load_scenario_config(path: Path) -> ScenarioConfig:
