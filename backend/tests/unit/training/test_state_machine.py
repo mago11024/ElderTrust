@@ -73,6 +73,7 @@ def test_start_training_locks_version_and_initializes_state() -> None:
     assert state.processed_receipts == ()
     assert state.end_state is None
     assert state.end_reason is None
+    assert len(state.scenario_config_fingerprint) == 64
 
 
 def test_normal_safe_path_completes_with_deterministic_events() -> None:
@@ -163,8 +164,8 @@ def test_end_training_stops_safely_at_any_stage_without_counting_a_normal_round(
     assert result.state.end_reason == "user_ended"
     assert result.state.current_stage_id is None
     assert result.state.normal_round_count == len(preceding_choices)
-    assert [event.event_type for event in result.emitted_events] == ["training_ended_by_user"]
-    assert not result.emitted_events[0].scoring_eligible
+    assert [event.event_type for event in result.newly_emitted_events] == ["training_ended_by_user"]
+    assert not result.newly_emitted_events[0].scoring_eligible
 
 
 def test_new_request_after_end_is_rejected_without_mutating_state() -> None:
@@ -228,7 +229,8 @@ def test_same_request_and_command_replays_receipt_without_advancing() -> None:
     assert replay.idempotent_replay
     assert replay.state == first.state
     assert replay.receipt == first.receipt
-    assert replay.emitted_events == ()
+    assert replay.newly_emitted_events == ()
+    assert first.receipt.original_events == first.newly_emitted_events
     assert replay.state.normal_round_count == 1
     assert len(replay.state.events) == 1
 
@@ -249,7 +251,7 @@ def test_same_request_replays_original_end_receipt_after_training_has_ended() ->
     assert replay.idempotent_replay
     assert replay.state == first.state
     assert replay.receipt == first.receipt
-    assert replay.emitted_events == ()
+    assert replay.newly_emitted_events == ()
 
 
 def test_same_request_with_different_command_is_a_conflict() -> None:
@@ -318,7 +320,7 @@ def test_end_training_precedes_maximum_normal_round_limit() -> None:
     assert result.state.end_state == EndState.SAFETY_STOPPED
     assert result.state.end_reason == "user_ended"
     assert result.state.normal_round_count == len(config.stages)
-    assert [event.event_type for event in result.emitted_events] == ["training_ended_by_user"]
+    assert [event.event_type for event in result.newly_emitted_events] == ["training_ended_by_user"]
 
 
 def test_config_version_must_match_state_locked_version() -> None:
@@ -332,6 +334,79 @@ def test_config_version_must_match_state_locked_version() -> None:
             state,
             command(config, state, "end_training"),
         )
+
+
+def test_deep_copied_config_with_mutated_behavior_mapping_is_rejected() -> None:
+    from app.training.domain import ScenarioConfigurationMismatchError
+
+    config = load_customer_refund_config()
+    state = start_training(config)
+    original_events = state.events
+    original_receipts = state.processed_receipts
+    changed_config = config.model_copy(deep=True)
+    changed_config.stages[0].choices[0].behavior_mappings[0].event_type = "changed_event"
+
+    with pytest.raises(ScenarioConfigurationMismatchError, match="configuration"):
+        apply_selection(
+            changed_config,
+            state,
+            command(config, state, "listen_without_verifying"),
+        )
+
+    assert state.events is original_events
+    assert state.processed_receipts is original_receipts
+
+
+def test_direct_nested_config_mutation_after_start_is_rejected() -> None:
+    from app.training.domain import ScenarioConfigurationMismatchError
+
+    config = load_customer_refund_config()
+    state = start_training(config)
+    original_command = command(config, state, "listen_without_verifying")
+    config.stages[0].choices[0].transition.target_id = "time_pressure"
+
+    with pytest.raises(ScenarioConfigurationMismatchError, match="configuration"):
+        apply_selection(config, state, original_command)
+
+    assert state.events == ()
+    assert state.processed_receipts == ()
+
+
+def test_idempotent_replay_precedes_later_config_mutation() -> None:
+    config = load_customer_refund_config()
+    initial = start_training(config)
+    original_command = command(
+        config,
+        initial,
+        "verify_via_official_channel",
+        request_id="replay-after-config-change",
+    )
+    first = apply_selection(config, initial, original_command)
+    config.stages[0].choices[0].transition.target_id = "time_pressure"
+
+    replay = apply_selection(config, first.state, original_command)
+
+    assert replay.idempotent_replay
+    assert replay.state == first.state
+    assert replay.receipt == first.receipt
+    assert replay.newly_emitted_events == ()
+
+
+def test_request_conflict_precedes_later_config_mutation() -> None:
+    config = load_customer_refund_config()
+    initial = start_training(config)
+    original_command = command(
+        config,
+        initial,
+        "verify_via_official_channel",
+        request_id="conflict-after-config-change",
+    )
+    first = apply_selection(config, initial, original_command)
+    config.stages[0].choices[0].transition.target_id = "time_pressure"
+    conflicting = replace(original_command, choice_id="listen_without_verifying")
+
+    with pytest.raises(RequestConflictError, match="request ID"):
+        apply_selection(config, first.state, conflicting)
 
 
 def test_unknown_choice_and_wrong_stage_are_distinct_errors() -> None:

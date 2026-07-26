@@ -1,5 +1,7 @@
 """Pure deterministic state transitions for training sessions."""
 
+import hashlib
+import json
 from dataclasses import replace
 
 from app.scenarios.schemas import (
@@ -15,6 +17,7 @@ from app.training.domain import (
     EmittedEvent,
     MaximumRoundsExceededError,
     RequestConflictError,
+    ScenarioConfigurationMismatchError,
     ScenarioVersionMismatchError,
     SelectionCommand,
     SelectionReceipt,
@@ -31,6 +34,7 @@ def start_training(config: ScenarioConfig) -> TrainingState:
 
     return TrainingState(
         scenario_version_id=config.scenario_version_id,
+        scenario_config_fingerprint=_scenario_config_fingerprint(config),
         current_stage_id=config.initial_stage_id,
         normal_round_count=0,
         events=(),
@@ -56,7 +60,7 @@ def apply_selection(
         return TransitionResult(
             state=state,
             receipt=replay,
-            emitted_events=(),
+            newly_emitted_events=(),
             idempotent_replay=True,
         )
 
@@ -66,6 +70,10 @@ def apply_selection(
     ):
         raise ScenarioVersionMismatchError(
             f"scenario version must match locked version {state.scenario_version_id}"
+        )
+    if _scenario_config_fingerprint(config) != state.scenario_config_fingerprint:
+        raise ScenarioConfigurationMismatchError(
+            "scenario configuration does not match the content locked at training start"
         )
     if state.end_state is not None:
         raise TrainingAlreadyEndedError(f"training already ended as {state.end_state}")
@@ -117,6 +125,16 @@ def _find_receipt(state: TrainingState, request_id: str) -> SelectionReceipt | N
         ),
         None,
     )
+
+
+def _scenario_config_fingerprint(config: ScenarioConfig) -> str:
+    canonical_json = json.dumps(
+        config.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
 def _apply_safety_choice(
@@ -217,7 +235,7 @@ def _complete_transition(
     end_state: EndState | None,
     end_reason: str | None,
 ) -> TransitionResult:
-    receipt = SelectionReceipt(command=command, emitted_events=emitted_events)
+    receipt = SelectionReceipt(command=command, original_events=emitted_events)
     next_state = replace(
         state,
         current_stage_id=current_stage_id,
@@ -230,5 +248,5 @@ def _complete_transition(
     return TransitionResult(
         state=next_state,
         receipt=receipt,
-        emitted_events=emitted_events,
+        newly_emitted_events=emitted_events,
     )

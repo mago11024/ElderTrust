@@ -35,12 +35,13 @@ class SelectionCommand:
 @dataclass(frozen=True, slots=True)
 class SelectionReceipt:
     command: SelectionCommand
-    emitted_events: tuple[EmittedEvent, ...]
+    original_events: tuple[EmittedEvent, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class TrainingState:
     scenario_version_id: UUID
+    scenario_config_fingerprint: str
     current_stage_id: str | None
     normal_round_count: int
     events: tuple[EmittedEvent, ...]
@@ -53,7 +54,7 @@ class TrainingState:
 class TransitionResult:
     state: TrainingState
     receipt: SelectionReceipt
-    emitted_events: tuple[EmittedEvent, ...]
+    newly_emitted_events: tuple[EmittedEvent, ...]
     idempotent_replay: bool = False
 
 
@@ -63,6 +64,10 @@ class TrainingDomainError(ValueError):
 
 class ScenarioVersionMismatchError(TrainingDomainError):
     """Raised when a command does not reference the locked scenario version."""
+
+
+class ScenarioConfigurationMismatchError(ScenarioVersionMismatchError):
+    """Raised when scenario content differs from the configuration locked at start."""
 
 
 class StageMismatchError(TrainingDomainError):
