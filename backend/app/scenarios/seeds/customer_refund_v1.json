@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "scenario_id": "7bea2c71-9bbb-4a38-bf53-a89b56635cbb",
+  "scenario_version_id": "991f3f54-79d7-4b0e-b2b0-a8f22f3d327c",
+  "scenario_key": "customer_refund",
+  "scenario_version": 1,
+  "title": "客服退款反诈情景训练",
+  "runtime_level": "l4",
+  "initial_stage_id": "customer_identity",
+  "stages": [
+    {
+      "stage_id": "customer_identity",
+      "order": 1,
+      "title": "客服身份",
+      "scripted_prompt": "您好，我是安信商城售后客服。系统显示您最近购买的保温杯存在问题，我的工号是虚构的 A-17，请先听我说明处理办法。",
+      "ai_strategy": {"mode": "fixed_content", "enabled": false, "allowed_response_intents": ["continue_script"], "prohibited_actions": ["request_real_personal_data", "make_external_contact"]},
+      "risk_points": ["unverified_customer_service_identity"],
+      "choices": [
+        {"choice_id": "listen_without_verifying", "label": "我先听听你怎么说", "transition": {"target_kind": "stage", "target_id": "order_anomaly"}, "behavior_mappings": [{"event_type": "identity_not_verified", "dimension": "identity_verification", "direction": "negative", "severity": "normal", "opportunity_id": "identity.stage_1", "evidence_source": "button_choice", "evidence_summary": "用户未通过官方渠道核实身份"}]},
+        {"choice_id": "verify_via_official_channel", "label": "我会从平台官方入口核实", "transition": {"target_kind": "stage", "target_id": "order_anomaly"}, "behavior_mappings": [{"event_type": "official_channel_verification", "dimension": "identity_verification", "direction": "positive", "severity": "normal", "opportunity_id": "identity.stage_1", "evidence_source": "button_choice", "evidence_summary": "用户选择通过平台官方入口核实"}]},
+        {"choice_id": "ask_trusted_person_to_verify", "label": "我请可信家人一起核实", "transition": {"target_kind": "stage", "target_id": "order_anomaly"}, "behavior_mappings": [{"event_type": "trusted_person_verification", "dimension": "identity_verification", "direction": "positive", "severity": "normal", "opportunity_id": "identity.stage_1", "evidence_source": "button_choice", "evidence_summary": "用户请求可信家人协助核实"}]}
+      ]
+    },
+    {
+      "stage_id": "order_anomaly",
+      "order": 2,
+      "title": "订单异常",
+      "scripted_prompt": "这笔虚构订单被标记为重复扣费，需要马上确认资料才能取消。您可以继续听退款方案，也可以自己核对。",
+      "ai_strategy": {"mode": "fixed_content", "enabled": false, "allowed_response_intents": ["continue_script"], "prohibited_actions": ["request_real_personal_data", "make_external_contact"]},
+      "risk_points": ["order_details_request"],
+      "choices": [
+        {"choice_id": "disclose_order_details", "label": "我把模拟订单资料告诉你", "transition": {"target_kind": "stage", "target_id": "refund_offer"}, "behavior_mappings": [{"event_type": "order_details_disclosed", "dimension": "information_protection", "direction": "negative", "severity": "normal", "opportunity_id": "information.stage_2", "evidence_source": "button_choice", "evidence_summary": "用户提供模拟订单资料"}]},
+        {"choice_id": "continue_without_disclosure", "label": "我不提供个人资料，你继续说明", "transition": {"target_kind": "stage", "target_id": "refund_offer"}, "behavior_mappings": [{"event_type": "personal_information_withheld", "dimension": "information_protection", "direction": "positive", "severity": "normal", "opportunity_id": "information.stage_2", "evidence_source": "button_choice", "evidence_summary": "用户拒绝提供个人资料"}]},
+        {"choice_id": "check_order_independently", "label": "我自己打开平台核对订单", "transition": {"target_kind": "stage", "target_id": "refund_offer"}, "behavior_mappings": [{"event_type": "order_checked_independently", "dimension": "information_protection", "direction": "positive", "severity": "normal", "opportunity_id": "information.stage_2", "evidence_source": "button_choice", "evidence_summary": "用户独立核对模拟订单"}]}
+      ]
+    },
+    {
+      "stage_id": "refund_offer",
+      "order": 3,
+      "title": "退款赔付",
+      "scripted_prompt": "为表示歉意，我们可以办理退款和额外赔付。您只要按我说的步骤操作，款项很快就能到账。",
+      "ai_strategy": {"mode": "fixed_content", "enabled": false, "allowed_response_intents": ["continue_script"], "prohibited_actions": ["request_real_personal_data", "make_external_contact"]},
+      "risk_points": ["unverified_refund_process"],
+      "choices": [
+        {"choice_id": "accept_unverified_refund", "label": "我按你的退款步骤操作", "transition": {"target_kind": "stage", "target_id": "sensitive_action"}, "behavior_mappings": [{"event_type": "unverified_refund_accepted", "dimension": "payment_awareness", "direction": "negative", "severity": "normal", "opportunity_id": "payment.stage_3", "evidence_source": "button_choice", "evidence_summary": "用户接受未核实的退款步骤"}]},
+        {"choice_id": "require_original_route_refund", "label": "退款应原路返回，不需要我额外操作", "transition": {"target_kind": "stage", "target_id": "sensitive_action"}, "behavior_mappings": [{"event_type": "original_route_refund_recognized", "dimension": "payment_awareness", "direction": "positive", "severity": "normal", "opportunity_id": "payment.stage_3", "evidence_source": "button_choice", "evidence_summary": "用户识别退款应原路返回"}]},
+        {"choice_id": "pause_for_official_verification", "label": "我先联系平台官方客服核实", "transition": {"target_kind": "stage", "target_id": "sensitive_action"}, "behavior_mappings": [{"event_type": "transaction_paused_for_verification", "dimension": "payment_awareness", "direction": "positive", "severity": "normal", "opportunity_id": "payment.stage_3", "evidence_source": "button_choice", "evidence_summary": "用户暂停交易并通过官方渠道核实"}]}
+      ]
+    },
+    {
+      "stage_id": "sensitive_action",
+      "order": 4,
+      "title": "敏感操作",
+      "scripted_prompt": "系统提示退款通道需要进一步验证。训练中会模拟陌生链接、屏幕共享和验证码请求，但不会执行任何真实操作。",
+      "ai_strategy": {"mode": "fixed_content", "enabled": false, "allowed_response_intents": ["continue_script"], "prohibited_actions": ["request_real_sensitive_data", "open_external_link", "start_screen_sharing"]},
+      "risk_points": ["verification_code", "unknown_link", "screen_sharing"],
+      "choices": [
+        {"choice_id": "share_verification_code", "label": "我把模拟验证码告诉你", "transition": {"target_kind": "stage", "target_id": "time_pressure"}, "behavior_mappings": [{"event_type": "verification_code_shared", "dimension": "information_protection", "direction": "negative", "severity": "severe", "opportunity_id": "information.stage_4", "evidence_source": "button_choice", "evidence_summary": "用户提供模拟验证码"}, {"event_type": "verification_code_shared", "dimension": "payment_awareness", "direction": "negative", "severity": "severe", "opportunity_id": "payment.stage_4", "evidence_source": "button_choice", "evidence_summary": "用户提供模拟验证码"}]},
+        {"choice_id": "open_unknown_link", "label": "我点击模拟陌生链接", "transition": {"target_kind": "stage", "target_id": "time_pressure"}, "behavior_mappings": [{"event_type": "unknown_link_opened", "dimension": "information_protection", "direction": "negative", "severity": "severe", "opportunity_id": "information.stage_4", "evidence_source": "button_choice", "evidence_summary": "用户点击模拟陌生链接"}, {"event_type": "unknown_link_opened", "dimension": "payment_awareness", "direction": "negative", "severity": "severe", "opportunity_id": "payment.stage_4", "evidence_source": "button_choice", "evidence_summary": "用户点击模拟陌生链接"}]},
+        {"choice_id": "enable_screen_sharing", "label": "我同意模拟屏幕共享", "transition": {"target_kind": "stage", "target_id": "time_pressure"}, "behavior_mappings": [{"event_type": "screen_sharing_enabled", "dimension": "information_protection", "direction": "negative", "severity": "severe", "opportunity_id": "information.stage_4", "evidence_source": "button_choice", "evidence_summary": "用户同意模拟屏幕共享"}, {"event_type": "screen_sharing_enabled", "dimension": "payment_awareness", "direction": "negative", "severity": "severe", "opportunity_id": "payment.stage_4", "evidence_source": "button_choice", "evidence_summary": "用户同意模拟屏幕共享"}]},
+        {"choice_id": "refuse_sensitive_actions", "label": "我全部拒绝，不点击也不共享", "transition": {"target_kind": "stage", "target_id": "time_pressure"}, "behavior_mappings": [{"event_type": "sensitive_request_refused", "dimension": "information_protection", "direction": "positive", "severity": "normal", "opportunity_id": "information.stage_4", "evidence_source": "button_choice", "evidence_summary": "用户拒绝敏感操作"}, {"event_type": "sensitive_request_refused", "dimension": "payment_awareness", "direction": "positive", "severity": "normal", "opportunity_id": "payment.stage_4", "evidence_source": "button_choice", "evidence_summary": "用户拒绝敏感操作"}]}
+      ]
+    },
+    {
+      "stage_id": "time_pressure",
+      "order": 5,
+      "title": "时间压力",
+      "scripted_prompt": "如果现在不完成，退款资格会失效，而且可能继续产生虚构扣费。请马上决定。",
+      "ai_strategy": {"mode": "fixed_content", "enabled": false, "allowed_response_intents": ["continue_script"], "prohibited_actions": ["make_external_contact", "make_threats"]},
+      "risk_points": ["time_pressure"],
+      "choices": [
+        {"choice_id": "comply_under_pressure", "label": "我马上照做", "transition": {"target_kind": "end", "target_id": "completed_risky"}, "behavior_mappings": [{"event_type": "pressure_compliance", "dimension": "pressure_response", "direction": "negative", "severity": "normal", "opportunity_id": "pressure.stage_5", "evidence_source": "button_choice", "evidence_summary": "用户在压力下顺从"}, {"event_type": "help_not_sought", "dimension": "help_termination", "direction": "negative", "severity": "normal", "opportunity_id": "help.stage_5", "evidence_source": "button_choice", "evidence_summary": "用户未寻求协助或终止联系"}]},
+        {"choice_id": "pause_and_verify", "label": "我暂停操作，挂断后独立核实", "transition": {"target_kind": "end", "target_id": "completed_safe"}, "behavior_mappings": [{"event_type": "paused_under_pressure", "dimension": "pressure_response", "direction": "positive", "severity": "normal", "opportunity_id": "pressure.stage_5", "evidence_source": "button_choice", "evidence_summary": "用户在压力下暂停操作"}, {"event_type": "suspicious_contact_ended", "dimension": "help_termination", "direction": "positive", "severity": "normal", "opportunity_id": "help.stage_5", "evidence_source": "button_choice", "evidence_summary": "用户终止可疑联系并独立核实"}]},
+        {"choice_id": "seek_trusted_help", "label": "我请家人或官方客服协助", "transition": {"target_kind": "end", "target_id": "completed_safe"}, "behavior_mappings": [{"event_type": "paused_under_pressure", "dimension": "pressure_response", "direction": "positive", "severity": "normal", "opportunity_id": "pressure.stage_5", "evidence_source": "button_choice", "evidence_summary": "用户在压力下暂停操作"}, {"event_type": "help_sought", "dimension": "help_termination", "direction": "positive", "severity": "normal", "opportunity_id": "help.stage_5", "evidence_source": "button_choice", "evidence_summary": "用户寻求可信协助"}]}
+      ]
+    }
+  ],
+  "global_safety_choices": [
+    {"choice_id": "end_training", "label": "结束训练", "transition": {"target_kind": "end", "target_id": "safety_stopped"}, "end_reason": "user_ended", "control_events": [{"event_type": "training_ended_by_user", "evidence_source": "safety_control", "scoring_eligible": false, "evidence_summary": "用户主动结束训练"}]},
+    {"choice_id": "suspected_real_fraud", "label": "我可能正在实际受骗", "transition": {"target_kind": "end", "target_id": "safety_stopped"}, "end_reason": "suspected_real_fraud", "control_events": [{"event_type": "suspected_real_fraud_declared", "evidence_source": "safety_control", "scoring_eligible": false, "evidence_summary": "用户声明可能正在实际受骗"}]}
+  ],
+  "end_conditions": [
+    {"end_state": "completed_safe", "condition_type": "normal_completion", "triggering_event_types": []},
+    {"end_state": "completed_risky", "condition_type": "risk_override", "triggering_event_types": ["pressure_compliance", "verification_code_shared", "unknown_link_opened", "screen_sharing_enabled"]},
+    {"end_state": "safety_stopped", "condition_type": "safety_stop", "triggering_event_types": ["training_ended_by_user", "suspected_real_fraud_declared"]}
+  ],
+  "content_safety": {
+    "forbidden_content": ["真实陌生链接", "真实屏幕共享", "真实验证码收集", "真实银行卡号收集", "真实证件号收集", "详细住址收集"],
+    "sensitive_data_rules": ["不要求输入真实验证码", "不要求输入银行卡号", "不要求输入证件号", "不要求输入详细住址"],
+    "max_pressure_prompts": 1,
+    "suspected_real_fraud_guidance": ["停止转账", "停止提供信息", "通过独立官方渠道核实"],
+    "external_action_policy": {"automatic_alarm": false, "automatic_fund_freeze": false, "automatic_family_contact": false}
+  },
+  "fallback": {"interaction_mode": "text_buttons", "ai_enabled": false, "evaluation_mode": "deterministic_rules", "fixed_content": "使用固定话术、文字按钮和确定性规则完成训练。"},
+  "scoring_policy": {
+    "positive_opportunity_score": 100,
+    "negative_opportunity_score": 0,
+    "severe_negative_dimension_cap": 20,
+    "rounding": "half_up_integer",
+    "dimensions": [
+      {"dimension": "identity_verification", "opportunity_ids": ["identity.stage_1"], "weight": 20},
+      {"dimension": "information_protection", "opportunity_ids": ["information.stage_2", "information.stage_4"], "weight": 25},
+      {"dimension": "payment_awareness", "opportunity_ids": ["payment.stage_3", "payment.stage_4"], "weight": 25},
+      {"dimension": "pressure_response", "opportunity_ids": ["pressure.stage_5"], "weight": 15},
+      {"dimension": "help_termination", "opportunity_ids": ["help.stage_5"], "weight": 15}
+    ]
+  }
+}
