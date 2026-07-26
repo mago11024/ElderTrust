@@ -6,6 +6,56 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if ($null -eq ('LauncherJob.OwnedJob' -as [type])) {
+  Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace LauncherJob {
+  public sealed class OwnedJob : IDisposable {
+    const uint CREATE_SUSPENDED = 0x00000004;
+    const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+    IntPtr job;
+    bool closed;
+
+    [StructLayout(LayoutKind.Sequential)] struct STARTUPINFO { public uint cb; public string lpReserved; public string lpDesktop; public string lpTitle; public uint dwX; public uint dwY; public uint dwXSize; public uint dwYSize; public uint dwXCountChars; public uint dwYCountChars; public uint dwFillAttribute; public uint dwFlags; public short wShowWindow; public short cbReserved2; public IntPtr lpReserved2; public IntPtr hStdInput; public IntPtr hStdOutput; public IntPtr hStdError; }
+    [StructLayout(LayoutKind.Sequential)] struct PROCESS_INFORMATION { public IntPtr hProcess; public IntPtr hThread; public uint dwProcessId; public uint dwThreadId; }
+    [StructLayout(LayoutKind.Sequential)] struct BASIC_LIMIT_INFORMATION { public long PerProcessUserTimeLimit; public long PerJobUserTimeLimit; public uint LimitFlags; public UIntPtr MinimumWorkingSetSize; public UIntPtr MaximumWorkingSetSize; public uint ActiveProcessLimit; public UIntPtr Affinity; public uint PriorityClass; public uint SchedulingClass; }
+    [StructLayout(LayoutKind.Sequential)] struct IO_COUNTERS { public ulong ReadOperationCount; public ulong WriteOperationCount; public ulong OtherOperationCount; public ulong ReadTransferCount; public ulong WriteTransferCount; public ulong OtherTransferCount; }
+    [StructLayout(LayoutKind.Sequential)] struct EXTENDED_LIMIT_INFORMATION { public BASIC_LIMIT_INFORMATION BasicLimitInformation; public IO_COUNTERS IoInfo; public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit; public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed; }
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
+    [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] static extern bool CreateProcess(string app, StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes, bool inheritHandles, uint flags, IntPtr environment, string currentDirectory, ref STARTUPINFO startupInfo, out PROCESS_INFORMATION processInfo);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern uint ResumeThread(IntPtr thread);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateProcess(IntPtr process, uint exitCode);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+
+    public OwnedJob() {
+      job = CreateJobObject(IntPtr.Zero, null);
+      if (job == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateJobObject failed.");
+      var info = new EXTENDED_LIMIT_INFORMATION(); info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+      IntPtr buffer = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(EXTENDED_LIMIT_INFORMATION)));
+      try { Marshal.StructureToPtr(info, buffer, false); if (!SetInformationJobObject(job, 9, buffer, (uint)Marshal.SizeOf(typeof(EXTENDED_LIMIT_INFORMATION)))) throw new Win32Exception(Marshal.GetLastWin32Error(), "SetInformationJobObject failed."); }
+      catch { Close(); throw; } finally { Marshal.FreeHGlobal(buffer); }
+    }
+    public Process Start(string application, string commandLine, string currentDirectory) {
+      var si = new STARTUPINFO(); si.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO)); PROCESS_INFORMATION pi;
+      if (!CreateProcess(application, new StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, true, CREATE_SUSPENDED, IntPtr.Zero, currentDirectory, ref si, out pi)) throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateProcess failed.");
+      try { if (!AssignProcessToJobObject(job, pi.hProcess)) throw new Win32Exception(Marshal.GetLastWin32Error(), "AssignProcessToJobObject failed."); if (ResumeThread(pi.hThread) == UInt32.MaxValue) throw new Win32Exception(Marshal.GetLastWin32Error(), "ResumeThread failed."); return Process.GetProcessById((int)pi.dwProcessId); }
+      catch { TerminateProcess(pi.hProcess, 1); throw; }
+      finally { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); }
+    }
+    public void Close() { if (closed) return; closed = true; if (job != IntPtr.Zero) { var handle = job; job = IntPtr.Zero; if (!CloseHandle(handle)) throw new Win32Exception(Marshal.GetLastWin32Error(), "CloseHandle(job) failed."); } }
+    public void Dispose() { Close(); GC.SuppressFinalize(this); }
+  }
+}
+'@
+}
+
 function Resolve-RequiredDirectory {
   param(
     [Parameter(Mandatory)]
@@ -100,28 +150,29 @@ function Start-ManagedApplication {
     [string]$CommandHostExecutable,
 
     [Parameter(Mandatory)]
+    [LauncherJob.OwnedJob]$Job,
+
+    [Parameter(Mandatory)]
     [string[]]$Arguments
   )
 
   Write-Host "START: $Name"
-  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $application = $Executable
+  $argumentsLine = $null
   if ([IO.Path]::GetExtension($Executable) -in @('.cmd', '.bat')) {
     if ($Executable.Contains('"')) {
       throw "Batch application path contains an unsupported quote: $Executable"
     }
     Assert-SafeBatchArguments -Arguments $Arguments
     $batchArguments = $Arguments -join ' '
-    $startInfo.FileName = $CommandHostExecutable
-    $startInfo.Arguments = '/d /s /c ""{0}" {1}"' -f $Executable, $batchArguments
+    $application = $CommandHostExecutable
+    $argumentsLine = '/d /s /c ""{0}" {1}"' -f $Executable, $batchArguments
   }
   else {
-    $startInfo.FileName = $Executable
-    $startInfo.Arguments = Join-WindowsArguments -Arguments $Arguments
+    $argumentsLine = Join-WindowsArguments -Arguments $Arguments
   }
-  $startInfo.WorkingDirectory = $WorkingDirectory
-  $startInfo.UseShellExecute = $false
-  $startInfo.CreateNoWindow = $false
-  return [System.Diagnostics.Process]::Start($startInfo)
+  $commandLine = (ConvertTo-WindowsArgument -Argument $application) + ' ' + $argumentsLine
+  return $Job.Start($application, $commandLine, $WorkingDirectory)
 }
 
 function Invoke-DockerComposeUp {
@@ -148,75 +199,16 @@ function Invoke-DockerComposeUp {
   }
 }
 
-function Stop-ManagedApplication {
+function Confirm-ManagedApplicationsStopped {
   param(
-    [AllowNull()]
-    [System.Diagnostics.Process]$Process,
-
-    [Parameter(Mandatory)]
-    [string]$Name,
-
-    [Parameter(Mandatory)]
-    [string]$TaskkillExecutable
+    [AllowEmptyCollection()]
+    [System.Diagnostics.Process[]]$Processes
   )
-
-  if ($null -eq $Process) {
-    return
-  }
-
-  # Retain this object and its process handle; never re-resolve its PID.
-  $processHandle = $Process
-  try {
-    $processHandle.Refresh()
-    if ($processHandle.HasExited) {
-      return
+  foreach ($process in $Processes) {
+    if ($null -ne $process -and -not $process.WaitForExit(5000)) {
+      return "Job close did not terminate managed process PID $($process.Id) within five seconds."
     }
   }
-  catch {
-    return
-  }
-
-  Write-Host "CLEANUP: stopping $Name process tree (PID $($processHandle.Id))."
-  $taskkillExitCode = $null
-  $taskkillFailure = $null
-  try {
-    $taskkillStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $taskkillStartInfo.FileName = $TaskkillExecutable
-    $taskkillStartInfo.Arguments = "/PID $($processHandle.Id) /T /F"
-    $taskkillStartInfo.UseShellExecute = $false
-    $taskkillStartInfo.CreateNoWindow = $true
-    $taskkillProcess = [System.Diagnostics.Process]::Start($taskkillStartInfo)
-    if ($taskkillProcess.WaitForExit(2000)) {
-      $taskkillExitCode = $taskkillProcess.ExitCode
-    }
-    else {
-      Stop-Process -Id $taskkillProcess.Id -Force -ErrorAction SilentlyContinue
-      $taskkillFailure = 'timed out after two seconds'
-    }
-  }
-  catch {
-    $taskkillFailure = $_.Exception.Message
-  }
-
-  if ($taskkillExitCode -eq 0) {
-    return
-  }
-
-  if ($null -eq $taskkillFailure) {
-    $taskkillFailure = "exited with code $taskkillExitCode"
-  }
-
-  try {
-    $processHandle.Refresh()
-    if (-not $processHandle.HasExited) {
-      Stop-Process -InputObject $processHandle -Force -ErrorAction Stop
-    }
-  }
-  catch {
-    $taskkillFailure = "$taskkillFailure; exact-root fallback failed: $($_.Exception.Message)"
-  }
-
-  return "Unconfirmed process-tree cleanup for $Name (PID $($processHandle.Id)): taskkill $taskkillFailure."
 }
 
 function Wait-ForManagedApplications {
@@ -253,7 +245,7 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 $originalLocation = Get-Location
 $backendProcess = $null
 $frontendProcess = $null
-$taskkillExecutable = $null
+$ownedJob = $null
 $launcherFailure = $null
 $cleanupFailures = [System.Collections.Generic.List[string]]::new()
 
@@ -265,26 +257,28 @@ try {
   $dockerExecutable = Resolve-RequiredApplication -Name 'docker'
   $pythonExecutable = Resolve-RequiredApplication -Name 'python'
   $pnpmExecutable = Resolve-RequiredApplication -Name 'pnpm'
-  $taskkillExecutable = Resolve-RequiredApplication -Name 'taskkill.exe'
   $commandHostExecutable = Resolve-RequiredApplication -Name 'cmd.exe'
 
   Invoke-DockerComposeUp -DockerExecutable $dockerExecutable -WorkingDirectory $repoRoot
-  $backendProcess = Start-ManagedApplication -Name 'backend' -WorkingDirectory $backendPath -Executable $pythonExecutable -CommandHostExecutable $commandHostExecutable -Arguments @('-m', 'uvicorn', 'app.main:app', '--reload')
-  $frontendProcess = Start-ManagedApplication -Name 'frontend' -WorkingDirectory $frontendPath -Executable $pnpmExecutable -CommandHostExecutable $commandHostExecutable -Arguments @('dev')
+  $ownedJob = [LauncherJob.OwnedJob]::new()
+  $backendProcess = Start-ManagedApplication -Name 'backend' -WorkingDirectory $backendPath -Executable $pythonExecutable -CommandHostExecutable $commandHostExecutable -Job $ownedJob -Arguments @('-m', 'uvicorn', 'app.main:app', '--reload')
+  $frontendProcess = Start-ManagedApplication -Name 'frontend' -WorkingDirectory $frontendPath -Executable $pnpmExecutable -CommandHostExecutable $commandHostExecutable -Job $ownedJob -Arguments @('dev')
   Wait-ForManagedApplications -BackendProcess $backendProcess -FrontendProcess $frontendProcess
 }
 catch {
   $launcherFailure = $_
 }
 finally {
-  if ($null -ne $taskkillExecutable) {
-    foreach ($cleanupResult in @(
-        Stop-ManagedApplication -Process $frontendProcess -Name 'frontend' -TaskkillExecutable $taskkillExecutable
-        Stop-ManagedApplication -Process $backendProcess -Name 'backend' -TaskkillExecutable $taskkillExecutable
-      )) {
+  if ($null -ne $ownedJob) {
+    try {
+      $ownedJob.Dispose()
+      $cleanupResult = Confirm-ManagedApplicationsStopped -Processes @($frontendProcess, $backendProcess)
       if ($null -ne $cleanupResult) {
         $cleanupFailures.Add($cleanupResult)
       }
+    }
+    catch {
+      $cleanupFailures.Add("Job cleanup failed: $($_.Exception.Message)")
     }
   }
   Set-Location -LiteralPath $originalLocation.Path

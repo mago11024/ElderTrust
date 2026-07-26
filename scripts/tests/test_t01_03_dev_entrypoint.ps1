@@ -121,11 +121,17 @@ if ($Name -eq 'docker') {
 
 if ($Name -eq 'python') {
   [IO.File]::WriteAllText($env:BACKEND_READY_PATH, 'ready', [Text.UTF8Encoding]::new($false))
-  Start-Sleep -Seconds 1
+  $child = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -PassThru
+  [IO.File]::WriteAllText($env:BACKEND_DESCENDANT_PID_PATH, $child.Id.ToString(), [Text.UTF8Encoding]::new($false))
+  for ($attempt = 0; $attempt -lt 40; $attempt++) {
+    if (Test-Path -LiteralPath $env:FRONTEND_READY_PATH -PathType Leaf) { break }
+    Start-Sleep -Milliseconds 50
+  }
   exit 19
 }
 
 if ($Name -eq 'pnpm') {
+  [IO.File]::WriteAllText($env:FRONTEND_READY_PATH, 'ready', [Text.UTF8Encoding]::new($false))
   $child = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -PassThru
   [IO.File]::WriteAllText($env:DESCENDANT_PID_PATH, $child.Id.ToString(), [Text.UTF8Encoding]::new($false))
   Wait-Process -Id $child.Id
@@ -162,6 +168,8 @@ function Invoke-Entrypoint {
 
   $env:COMMAND_LOG = $CommandLogPath
   $env:DESCENDANT_PID_PATH = Join-Path $fixtureRoot 'descendant.pid'
+  $env:BACKEND_DESCENDANT_PID_PATH = Join-Path $fixtureRoot 'backend-descendant.pid'
+  $env:FRONTEND_READY_PATH = Join-Path $fixtureRoot 'frontend.ready'
   $env:BACKEND_READY_PATH = Join-Path $fixtureRoot 'backend.ready'
   $resultPath = Join-Path $fixtureRoot 'launcher-result.txt'
   Write-FixtureFile -RelativePath 'shims\invoke-launcher.ps1' -Content @'
@@ -203,7 +211,7 @@ exit $exitCode
   $launcherStopwatch = [Diagnostics.Stopwatch]::StartNew()
   $timedOut = -not $process.WaitForExit(8000)
   if ($timedOut) {
-    & taskkill.exe /PID $process.Id /T /F | Out-Null
+    Stop-Process -InputObject $process -Force -ErrorAction SilentlyContinue
     $null = $process.WaitForExit(3000)
   }
 
@@ -272,6 +280,8 @@ $originalPath = $env:PATH
 $originalCommandLog = $env:COMMAND_LOG
 $originalDockerExitCode = $env:FAKE_DOCKER_EXIT_CODE
 $originalDescendantPidPath = $env:DESCENDANT_PID_PATH
+$originalBackendDescendantPidPath = $env:BACKEND_DESCENDANT_PID_PATH
+$originalFrontendReadyPath = $env:FRONTEND_READY_PATH
 $originalBackendReadyPath = $env:BACKEND_READY_PATH
 $originalArgvLog = $env:ARGV_LOG
 $sentinelProcess = $null
@@ -305,6 +315,7 @@ try {
   $result = Invoke-Entrypoint -CommandLogPath $commandLogPath -ShadowApplications
   $backendPath = Join-Path $fixtureRoot 'backend'
   $frontendPath = Join-Path $fixtureRoot 'frontend'
+  Assert-True -Condition (-not ([IO.File]::ReadAllText($entrypointPath).Contains('taskkill'))) -Message 'Launcher must not depend on taskkill PID-tree cleanup'
 
   Assert-True -Condition ($result.ExitCode -ne 0) -Message 'An application exit should fail the development launcher'
   Assert-True -Condition (-not $result.TimedOut) -Message 'Launcher should clean up and exit before the bounded fixture timeout'
@@ -321,6 +332,11 @@ try {
     $descendantId = [int][IO.File]::ReadAllText($env:DESCENDANT_PID_PATH)
     Assert-True -Condition (Test-ProcessHasExited -Id $descendantId) -Message 'Launcher cleanup should terminate the frontend process tree it created'
   }
+  Assert-True -Condition (Test-Path -LiteralPath $env:BACKEND_DESCENDANT_PID_PATH -PathType Leaf) -Message 'Backend shim should record its descendant PID before its root exits'
+  if (Test-Path -LiteralPath $env:BACKEND_DESCENDANT_PID_PATH -PathType Leaf) {
+    $backendDescendantId = [int][IO.File]::ReadAllText($env:BACKEND_DESCENDANT_PID_PATH)
+    Assert-True -Condition (Test-ProcessHasExited -Id $backendDescendantId) -Message 'Launcher cleanup should terminate a backend descendant after its root exits'
+  }
   $sentinelProcess.Refresh()
   Assert-True -Condition (-not $sentinelProcess.HasExited) -Message 'Launcher cleanup must not terminate an unrelated sentinel process'
 
@@ -335,6 +351,15 @@ try {
   Assert-True -Condition ($testStopwatch.ElapsedMilliseconds -lt 15000) -Message 'Behavior test must complete within its wall-clock deadline'
 }
 finally {
+  foreach ($pidPath in @($env:DESCENDANT_PID_PATH, $env:BACKEND_DESCENDANT_PID_PATH)) {
+    if (Test-Path -LiteralPath $pidPath -PathType Leaf) {
+      $fixtureProcess = Get-Process -Id ([int][IO.File]::ReadAllText($pidPath)) -ErrorAction SilentlyContinue
+      if ($null -ne $fixtureProcess) {
+        Stop-Process -InputObject $fixtureProcess -Force -ErrorAction SilentlyContinue
+        $null = $fixtureProcess.WaitForExit(2000)
+      }
+    }
+  }
   if ($null -ne $sentinelProcess) {
     try {
       $sentinelProcess.Refresh()
@@ -351,6 +376,8 @@ finally {
       @{ Name = 'COMMAND_LOG'; Value = $originalCommandLog },
       @{ Name = 'FAKE_DOCKER_EXIT_CODE'; Value = $originalDockerExitCode },
       @{ Name = 'DESCENDANT_PID_PATH'; Value = $originalDescendantPidPath },
+      @{ Name = 'BACKEND_DESCENDANT_PID_PATH'; Value = $originalBackendDescendantPidPath },
+      @{ Name = 'FRONTEND_READY_PATH'; Value = $originalFrontendReadyPath },
       @{ Name = 'BACKEND_READY_PATH'; Value = $originalBackendReadyPath },
       @{ Name = 'ARGV_LOG'; Value = $originalArgvLog }
     )) {
