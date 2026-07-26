@@ -4,10 +4,10 @@
 schema_version: 1
 current_milestone: M1
 milestone_status: active
-current_task: T01-02
-status: completed
+current_task: T01-03
+status: in_progress
 last_completed_task: T01-02
-next_task: T01-03
+next_task: T01-04
 task_catalog: docs/superpowers/plans/2026-07-23-complete-project-task-catalog.md
 blockers: []
 active_regression: null
