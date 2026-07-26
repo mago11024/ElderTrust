@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-  [string]$DockerCommand = 'docker'
+  [string]$DockerCommand = 'docker',
+  [AllowEmptyString()]
+  [string]$ComposeJson
 )
 
 Set-StrictMode -Version Latest
@@ -199,14 +201,20 @@ if (Test-Path -LiteralPath $composePath -PathType Leaf) {
   else {
     $composeOutput = @()
     $composeExitCode = $null
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-      $ErrorActionPreference = 'Continue'
-      $composeOutput = & $DockerCommand compose -f $composePath config --format json 2>&1
-      $composeExitCode = $LASTEXITCODE
+    if ($PSBoundParameters.ContainsKey('ComposeJson')) {
+      $composeOutput = $ComposeJson
+      $composeExitCode = 0
     }
-    finally {
-      $ErrorActionPreference = $previousErrorActionPreference
+    else {
+      $previousErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $composeOutput = & $DockerCommand compose -f $composePath config --format json 2>&1
+        $composeExitCode = $LASTEXITCODE
+      }
+      finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+      }
     }
 
     if ($composeExitCode -ne 0) {
@@ -222,17 +230,36 @@ if (Test-Path -LiteralPath $composePath -PathType Leaf) {
       }
 
       if ($null -ne $composeConfig) {
-        $serviceNames = @($composeConfig.services.psobject.Properties.Name)
-        Assert-Equal -Actual ($serviceNames -join ',') -Expected 'mysql' -Message 'Normalized Compose services should contain only mysql'
-
-        if ($null -eq $composeConfig.services.mysql) {
-          $failures.Add('Normalized Compose configuration should define the mysql service.')
-        }
-        elseif ($null -eq $composeConfig.services.mysql.healthcheck) {
-          $failures.Add('Normalized MySQL Compose configuration should define a healthcheck.')
+        $servicesProperty = $composeConfig.psobject.Properties['services']
+        if ($null -eq $servicesProperty -or $null -eq $servicesProperty.Value) {
+          $failures.Add('Normalized Compose configuration should define services.')
         }
         else {
-          Assert-Equal -Actual $composeConfig.services.mysql.healthcheck.start_interval -Expected '2s' -Message 'MySQL healthcheck start_interval should be two seconds'
+          $services = $servicesProperty.Value
+          $serviceNames = @($services.psobject.Properties | ForEach-Object { $_.Name })
+          Assert-Equal -Actual ($serviceNames -join ',') -Expected 'mysql' -Message 'Normalized Compose services should contain only mysql'
+
+          $mysqlProperty = $services.psobject.Properties['mysql']
+          if ($null -eq $mysqlProperty -or $null -eq $mysqlProperty.Value) {
+            $failures.Add('Normalized Compose configuration should define the mysql service.')
+          }
+          else {
+            $mysql = $mysqlProperty.Value
+            $healthcheckProperty = $mysql.psobject.Properties['healthcheck']
+            if ($null -eq $healthcheckProperty -or $null -eq $healthcheckProperty.Value) {
+              $failures.Add('Normalized MySQL Compose configuration should define a healthcheck.')
+            }
+            else {
+              $healthcheck = $healthcheckProperty.Value
+              $startIntervalProperty = $healthcheck.psobject.Properties['start_interval']
+              if ($null -eq $startIntervalProperty) {
+                $failures.Add('Normalized MySQL healthcheck should define start_interval.')
+              }
+              else {
+                Assert-Equal -Actual $startIntervalProperty.Value -Expected '2s' -Message 'MySQL healthcheck start_interval should be two seconds'
+              }
+            }
+          }
         }
       }
     }
