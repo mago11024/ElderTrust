@@ -303,11 +303,11 @@ try {
       (ConvertTo-WindowsArgument -Argument ''),
       (ConvertTo-WindowsArgument -Argument 'space value'),
       (ConvertTo-WindowsArgument -Argument 'quote"inside'),
-      (ConvertTo-WindowsArgument -Argument 'trailing\'),
+      (ConvertTo-WindowsArgument -Argument 'trailing space\'),
       (ConvertTo-WindowsArgument -Argument 'plain')
     ) -join ' '
   $argumentProbeOutput = Invoke-WindowsArgumentProbe -ArgumentLine $roundTripLine -CommandLogPath $argumentProbeLogPath
-  Assert-Equal -Actual ($argumentProbeOutput -join "`n") -Expected ((@('', 'space value', 'quote"inside', 'trailing\', 'plain') | ForEach-Object { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($_)) }) -join "`n") -Message 'Windows argument probe should preserve empty, spaced, quoted, trailing-backslash, and plain arguments'
+  Assert-Equal -Actual ($argumentProbeOutput -join "`n") -Expected ((@('', 'space value', 'quote"inside', 'trailing space\', 'plain') | ForEach-Object { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($_)) }) -join "`n") -Message 'Windows argument probe should preserve empty, spaced, quoted, trailing-backslash, and plain arguments'
 
   $env:PATH = "$(Join-Path $fixtureRoot 'shims');$originalPath"
   $env:FAKE_DOCKER_EXIT_CODE = '0'
