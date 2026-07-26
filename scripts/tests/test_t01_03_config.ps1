@@ -229,7 +229,10 @@ if (Test-Path -LiteralPath $composePath -PathType Leaf) {
         $composeConfig = $null
       }
 
-      if ($null -ne $composeConfig) {
+      if ($null -eq $composeConfig) {
+        $failures.Add('Docker Compose returned an empty or null configuration model.')
+      }
+      else {
         $servicesProperty = $composeConfig.psobject.Properties['services']
         if ($null -eq $servicesProperty -or $null -eq $servicesProperty.Value) {
           $failures.Add('Normalized Compose configuration should define services.')
