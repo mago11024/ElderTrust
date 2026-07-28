@@ -28,23 +28,35 @@
 
 - [ ] 将当前文档分支评审并合入 `main`，确保团队不再从旧基线开始开发。
 - [ ] 确认仓库可见性、成员权限、分支保护和至少一名评审人。
-- [ ] 确认 Issue/任务管理方式，并把 M1 拆成可验收的小任务。
+- [x] 确认以 Task 目录管理开发工作，并把 M1 拆成可验收的小任务。
 - [ ] 确认代码版权归属；若计划公开仓库，选择并添加 `LICENSE`。
 
 ### 开发环境
 
-- [ ] 确认团队统一使用的 Node.js、pnpm、Python 和 Docker 版本。
-- [ ] 在至少一台实际开发设备上验证 MySQL 容器可运行。
-- [ ] 确认 Windows/macOS/Linux 的主要开发环境及脚本兼容要求。
-- [ ] 约定配置分层：`.env.example`、本地 `.env`、测试配置和部署密钥。
+- [x] 确认团队统一使用的 Node.js、pnpm、Python、Docker 和 Docker Compose 版本。
+- [x] 在至少一台实际开发设备上验证 MySQL 容器可运行。
+- [x] 确认 Windows 11 和 PowerShell 为当前主要开发与容器验收环境，并记录跨平台脚本兼容要求。
+- [x] 约定配置分层：`.env.example`、本地 `.env`、测试配置和部署密钥。
+
+验证记录（2026-07-24，Windows 11）：本机 `MySQL57` 占用默认端口 3306，因此通过进程级 `MYSQL_PORT=3307` 覆盖运行 `docker compose up -d mysql`；容器健康状态达到 `healthy`，容器内 `mysqladmin ping` 返回 `mysqld is alive`。验收后运行 `docker compose down`，命名卷 `anxin-training_mysql_data` 已确认保留。
 
 ### M1 契约
 
-- [ ] 固定客服退款场景的最小阶段、结束条件和 L4 固定话术。
-- [ ] 固定五维评分的首版行为事件、证据格式和确定性规则。
+- [x] 固定客服退款场景的最小阶段、结束条件和 L4 固定话术。
+- [x] 固定五维评分的首版行为事件、证据格式和确定性规则。
 - [ ] 定义最小用户、场景版本、训练会话、轮次、行为事件和评分数据模型。
-- [ ] 定义统一 API 错误格式和时间、ID、枚举命名约定。
-- [ ] 为 M1 写出可人工执行的主流程验收脚本。
+- [x] 定义统一 API 错误格式和时间、ID、枚举命名约定。
+- [x] 为 M1 写出可人工执行的主流程验收脚本。
+
+证据：
+
+- M1 Task 拆分：[`2026-07-23-complete-project-task-catalog.md`](./superpowers/plans/2026-07-23-complete-project-task-catalog.md)；
+- L4 场景：[`SCENARIO_CUSTOMER_REFUND_V1.md`](./SCENARIO_CUSTOMER_REFUND_V1.md)；
+- 五维评分：[`SCORING_RULES.md`](./SCORING_RULES.md)；
+- 公开数据命名与 API：[`DATA_CONVENTIONS.md`](./DATA_CONVENTIONS.md) 和
+  [`API_CONVENTIONS.md`](./API_CONVENTIONS.md)；
+- 需求归属与 M1 人工验收：[`REQUIREMENT_TRACEABILITY.md`](./REQUIREMENT_TRACEABILITY.md) 和
+  [`M1_ACCEPTANCE.md`](./M1_ACCEPTANCE.md)。
 
 ## 4. 里程碑阻塞项
 

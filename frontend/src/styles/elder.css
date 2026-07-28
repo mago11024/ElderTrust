@@ -1,0 +1,261 @@
+:root {
+  color: #16324f;
+  background: #eef6f5;
+  font-family:
+    "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+  font-size: 20px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    linear-gradient(90deg, #1f7a72 0 0) top / 100% 0.4rem no-repeat,
+    #eef6f5;
+}
+
+button,
+a {
+  font: inherit;
+}
+
+a:focus-visible {
+  outline: 4px solid #16324f;
+  outline-offset: 4px;
+}
+
+.elder-app {
+  width: min(100%, 48rem);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.brand-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3rem;
+}
+
+.brand-mark {
+  display: grid;
+  width: 2.6rem;
+  height: 2.6rem;
+  color: #ffffff;
+  font-weight: 800;
+  place-items: center;
+  background: #16324f;
+  border-radius: 0.75rem 0.75rem 0.75rem 0.2rem;
+}
+
+.brand-name {
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.app-label {
+  margin-left: auto;
+  padding: 0.3rem 0.65rem;
+  color: #124f49;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: #d7ece9;
+  border-radius: 999px;
+}
+
+.home {
+  display: grid;
+  gap: 1rem;
+  padding-block: 1.25rem;
+}
+
+.welcome-panel,
+.practice-guide {
+  background: #ffffff;
+  border: 2px solid #c8dedb;
+  border-radius: 1.4rem;
+  box-shadow: 0 0.5rem 0 #d7e8e6;
+}
+
+.welcome-panel {
+  padding: clamp(1.4rem, 6vw, 3rem);
+  border-top: 0.55rem solid #1f7a72;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  color: #1b655f;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  max-width: 9em;
+  margin-bottom: 0.9rem;
+  color: #102b46;
+  font-size: clamp(2.15rem, 10vw, 4rem);
+  line-height: 1.12;
+  letter-spacing: -0.04em;
+}
+
+h2 {
+  margin-bottom: 0;
+  color: #102b46;
+  font-size: clamp(1.45rem, 6vw, 2.2rem);
+  line-height: 1.25;
+}
+
+.welcome-copy {
+  max-width: 30rem;
+  margin-bottom: 1.5rem;
+  color: #39536c;
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+
+.primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(100%, 18rem);
+  min-height: 3.25rem;
+  padding: 0.75rem 1.1rem;
+  color: #ffffff;
+  font-weight: 800;
+  text-decoration: none;
+  background: #146b63;
+  border: 3px solid #0f554f;
+  border-radius: 1rem;
+  box-shadow: 0 0.3rem 0 #0f554f;
+}
+
+.primary-action:hover {
+  background: #105d56;
+}
+
+.primary-action:active {
+  transform: translateY(0.2rem);
+  box-shadow: 0 0.1rem 0 #0f554f;
+}
+
+.practice-guide {
+  padding: clamp(1.25rem, 5vw, 2.5rem);
+  scroll-margin-top: 1rem;
+}
+
+.guide-heading {
+  padding-bottom: 1.2rem;
+  border-bottom: 2px solid #d8e7e5;
+}
+
+.practice-route {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.practice-route li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 3rem 1fr;
+  gap: 0.9rem;
+  padding-block: 1.1rem;
+}
+
+.practice-route li:not(:last-child) {
+  border-bottom: 2px dashed #b9d7d3;
+}
+
+.step-marker {
+  display: grid;
+  width: 2.7rem;
+  height: 2.7rem;
+  color: #16324f;
+  font-weight: 900;
+  place-items: center;
+  background: #f2b84b;
+  border: 3px solid #16324f;
+  border-radius: 50% 50% 50% 0.35rem;
+}
+
+.practice-route strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: #16324f;
+  font-size: 1.1rem;
+}
+
+.practice-route p {
+  margin-bottom: 0;
+  color: #4a6278;
+  line-height: 1.6;
+}
+
+.ready-note {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.5rem 0 0;
+  padding: 0.85rem 1rem;
+  color: #124f49;
+  font-weight: 800;
+  background: #dff2ee;
+  border-radius: 0.85rem;
+}
+
+.ready-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  background: #1f7a72;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #1f7a72;
+}
+
+.home-footer {
+  padding: 1rem 0.5rem 2rem;
+  color: #466078;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  text-align: center;
+}
+
+@media (min-width: 48rem) {
+  .home {
+    grid-template-columns: 1.1fr 0.9fr;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .primary-action:active {
+    transform: none;
+  }
+}

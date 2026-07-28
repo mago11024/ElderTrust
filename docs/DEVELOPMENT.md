@@ -52,91 +52,90 @@
 
 模块应保持单一职责。跨模块调用使用应用服务和明确类型，不能跨目录直接操作内部 ORM 模型。
 
-## 4. 计划开发环境
+## 4. 开发环境
 
 | 工具 | 版本基线 |
 | --- | --- |
-| Node.js | 20 LTS 或项目锁定版本 |
-| pnpm | 9.x 或项目锁定版本 |
-| Python | 3.12 |
-| MySQL | 8.0+ |
+| Node.js | 24.18.0 |
+| pnpm | 11.4.0 |
+| Python | 3.12.10 |
+| MySQL | 8.4.10 |
 | Redis | 7.x |
 | MinIO | 与 S3 API 兼容的稳定版本 |
-| Docker | 24+ |
-| Docker Compose | v2 |
+| Docker | 29.6.2 |
+| Docker Compose | 5.1.4 |
 
-实际工程创建后必须通过锁文件和工具配置固定版本。
+`.tool-versions` 是 Node.js、pnpm、Python、Docker 和 Docker Compose 精确版本的权威来源；`docker-compose.yml` 锁定 MySQL 镜像版本。版本变化必须同时更新锁定文件、本节和相关验收。
+
+Windows 11 是当前主要开发与容器验收环境。仓库脚本优先提供 PowerShell 入口；跨平台脚本不得依赖 PowerShell 独有行为，若暂时只能在 Windows 运行必须在命令旁明确标注。
 
 M1 只要求 MySQL 可运行。Redis 和 MinIO 仍是第一版技术基线，但应在短期状态、限流、录音或素材功能首次需要时接入；在此之前通过明确接口和测试替身避免业务代码绑定具体基础设施。
 
-## 5. 计划命令契约
+## 5. 已实现的本地与 CI 命令
 
-工程骨架完成后，应提供以下入口或等价脚本：
+首次安装依赖时，在仓库根目录执行：
 
 ```powershell
-# M1 基础设施
-docker compose up -d mysql
-
-# 进入语音和短期状态里程碑后
-docker compose up -d redis minio
-
-# 后端
 cd backend
-python -m venv .venv
 python -m pip install -e ".[dev]"
-python -m alembic upgrade head
-python -m uvicorn app.main:app --reload
+cd ..
 
-# 前端
 cd frontend
-pnpm install
-pnpm dev
-
-# 测试
-cd backend
-python -m pytest
-
-cd ../frontend
-pnpm test
-pnpm exec playwright test
+pnpm install --frozen-lockfile
+cd ..
 ```
 
-最终命令以实际 `pyproject.toml`、`package.json` 和脚本为准。任何变化都必须同步更新本文件。
+`backend[dev]` 包含本地 CI 工作流解析所需的 PyYAML；不要在本地或 CI 单独临时安装它。
+
+统一启动入口会等待 MySQL 健康后，在同一个终端显示后端和前端日志：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
+```
+
+按 `Ctrl+C` 会停止本次启动的后端和前端应用进程；MySQL 容器会保留。需要停止 MySQL 时，另行执行：
+
+```powershell
+docker compose stop mysql
+```
+
+统一质量入口复用仓库 PowerShell 契约测试、后端检查和前端检查：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\test.ps1
+```
+
+当前没有 `test:e2e` 时，统一测试入口会明确跳过该预留阶段；当 `frontend/package.json` 定义精确的 `test:e2e` 脚本后，它会自动执行。CI 安装同一套 `backend[dev]` 与冻结的前端锁文件，然后只调用 `scripts/test.ps1`。
+
+手工 smoke 只在交互式终端执行且保持有界：启动 `scripts\dev.ps1`，确认 `http://127.0.0.1:8000/health` 返回健康响应并打开 Vite 根地址 `http://localhost:5173/`；随后按 `Ctrl+C`，最后用 `docker compose ps mysql` 确认 MySQL 仍在运行。自动化验收不启动长期运行的真实开发服务。
 
 ## 6. 环境变量
 
-第一版至少需要以下配置，仓库只提交 `.env.example`：
+T00-01 只定义当前本地应用和 MySQL 所需配置，仓库提交的 `.env.example` 内容如下：
 
 ```text
-APP_ENV=
-APP_HOST=
-APP_PORT=
-FRONTEND_ORIGIN=
+APP_ENV=development
+APP_HOST=127.0.0.1
+APP_PORT=8000
+FRONTEND_ORIGIN=http://localhost:5173
+LOG_LEVEL=INFO
 
-DATABASE_URL=
-REDIS_URL=
-
-JWT_SECRET=
-JWT_EXPIRE_MINUTES=
-
-STORAGE_ENDPOINT=
-STORAGE_BUCKET=
-STORAGE_ACCESS_KEY=
-STORAGE_SECRET_KEY=
-RECORDING_RETENTION_POLICY=
-
-ASR_PROVIDER=
-ASR_API_KEY=
-LLM_PROVIDER=
-LLM_API_KEY=
-TTS_PROVIDER=
-TTS_API_KEY=
-
-AI_REQUEST_TIMEOUT_SECONDS=
-TRAINING_MAX_DURATION_SECONDS=
-TRAINING_MAX_TURNS=
-LOG_LEVEL=
+MYSQL_DATABASE=anxin_training
+MYSQL_USER=anxin_app
+MYSQL_PASSWORD=local-only-change-me
+MYSQL_ROOT_PASSWORD=local-root-only-change-me
+MYSQL_PORT=3306
+DATABASE_URL=mysql+asyncmy://anxin_app:local-only-change-me@localhost:3306/anxin_training
 ```
+
+配置按以下四层管理：
+
+1. `.env.example`：提交到仓库，只包含安全的本地默认值和明显占位值。
+2. 本地 `.env`：开发者私有，不提交，用于覆盖端口和本地开发凭据。
+3. 测试配置：由测试进程或 CI 注入，使用隔离数据库和独立凭据。
+4. 部署密钥：由部署平台密钥存储注入，不进入仓库、镜像或前端构建产物。
+
+Redis、MinIO、存储和 AI 供应商变量在相应 Task 首次需要时加入，不在 T00-01 提前建立契约。
 
 真实密钥不得提交、打印或返回给前端。新增变量时必须更新 `.env.example` 和部署文档。
 
@@ -210,6 +209,60 @@ LOG_LEVEL=
 - 未授权访问拒绝；
 - L1 至 L4 降级；
 - 保健品场景复用训练引擎。
+
+### 11.1 执行模式与成本控制
+
+#### TDD 前选择执行模式
+
+每个新 Task 在编写第一个失败测试前，必须请用户选择本 Task 的执行模式：
+
+- `Subagent-Driven`：适合风险较高、边界明确且审查价值较高的实现；
+- 当前会话直接执行：适合纯文档、低风险配置、小范围修复或用户希望压低沟通与代理成本的工作。
+
+选择对整个 Task 生效，不在每个 TDD 红绿循环重复询问。已有明确且已确认的 Task 或设计时，不重复生成大篇幅设计或计划文档，只记录会影响实现的未决歧义。
+
+#### 执行前估算与成本检查点
+
+开始执行前给出简要预算，至少包含预计耗时、代理调用次数和完整回归次数。估算用于及时发现偏差，不作为降低验收标准的理由。
+
+出现以下任一情况时暂停执行，报告已完成工作、剩余工作、偏差原因和继续成本，并等待用户确认：
+
+- 实际成本达到初始估算的 1.5 倍；
+- 需要增加计划外依赖；
+- 需要改变 Task 范围、架构或验收标准；
+- 审查或修复循环无法在既定流程内收敛。
+
+#### 精简的 Subagent-Driven 流程
+
+默认流程为：
+
+1. 一个实现代理完成当前 Task，并运行聚焦测试；
+2. 一个规格审查代理一次性检查需求、范围和验收标准；
+3. 一个质量审查代理一次性检查正确性、可维护性和风险；
+4. 主会话汇总发现、完成必要修复并执行最终验证。
+
+不为同一目的重复读取完整上下文或启动重复审查。只有 `Critical` 或 `Important` 问题需要复审；复审应聚焦原阻塞项，不重新进行全量审查。
+
+| 严重级别 | 默认处理 |
+| --- | --- |
+| `Critical` | 必须修复并复审，未关闭不得完成 Task |
+| `Important` | 必须修复并聚焦复审 |
+| `Minor` | 仅在低风险、低成本且不会触发新审查时修复，否则记录后留待后续 |
+
+#### 验证策略
+
+- 实现过程中优先运行与改动直接相关的聚焦测试。
+- 最终候选版本运行一次 Task 验收命令和完整回归。
+- 最终验证后修改代码，必须重跑受影响的检查；只有影响面广或公共基础设施发生变化时才重跑完整回归。
+- 高完成度以需求、验收标准和相关回归全部满足为准，不扩展为与当前 Task 无关的理论完善。
+
+#### 风险分级
+
+| 风险级别 | 适用范围 | 审查与验证深度 |
+| --- | --- | --- |
+| 深度 | 安全、权限、隐私、评分、数据正确性、流程归属 | 完整规格与质量审查，严格回归 |
+| 常规 | 一般业务逻辑、接口、CI 和工程脚本 | 标准规格与质量审查，受影响回归 |
+| 轻量 | 纯文档、注释和低风险配置 | 当前会话核对与针对性验证，无默认子代理审查 |
 
 ## 12. Git 工作流
 
